@@ -1,0 +1,11 @@
+**/target/
+*.ffs_db
+
+**/.DS_Store
+.vscode
+
+dist
+pkg
+
+*.pending-snap
+*.new

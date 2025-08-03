@@ -1,0 +1,41 @@
+[package]
+name = "mysteryn-core"
+description = "The Mysteryn core library"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+keywords = ["crypto", "signature", "authorization"]
+categories = ["cryptography", "algorithms", "encoding"]
+authors = ["Dmytro Savranskyi <ingvuil@gmail.com>"]
+homepage = "https://mysteryn.com"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+serde = { workspace = true }
+rand = { workspace = true }
+unsigned-varint = { workspace = true }
+ambassador = { workspace = true }
+hex = { workspace = true }
+thiserror = "2.0"
+data-encoding = "2.9"
+data-encoding-macro = "0.1"
+base32ct = { version = "0.2", features = ["alloc"] }
+phf = { version = "0.12", features = ["macros"] }
+bytes = "1.10"
+bs58 = "0.5"
+base64 = "0.22"
+reed_solomon_rs = "0.1"
+reed-solomon = "0.2"
+dyn-clone = "1.0"
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+# This is needed so that rand can be included in wasm32-unknown-unknown builds.
+getrandom = { workspace = true, features = ["wasm_js"] }
+
+[target.'cfg(all(target_family = "wasm"))'.dependencies]
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }

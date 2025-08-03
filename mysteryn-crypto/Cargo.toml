@@ -1,0 +1,56 @@
+[package]
+name = "mysteryn-crypto"
+description = "The Mysteryn cryptography"
+version = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+keywords = ["crypto", "signature", "authorization"]
+categories = ["cryptography", "algorithms", "encoding"]
+authors = ["Dmytro Savranskyi <ingvuil@gmail.com>"]
+homepage = "https://mysteryn.com"
+license = "MIT"
+readme = "README.md"
+
+# Starting from Rust 1.87 all Wasm features are on, so need to specify 
+# `wasm-opt` features explicitly.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-mutable-globals", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[dependencies]
+serde = { workspace = true }
+rand = { workspace = true }
+unsigned-varint = { workspace = true }
+ambassador = { workspace = true }
+hex = { workspace = true }
+urlencoding = "2.1"
+multihash-codetable = { version = "0.1", features = ["sha2", "sha3", "blake3"] }
+multihash-derive = "0.9"
+mysteryn-core = { path = "../mysteryn-core" }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+# This is needed so that rand can be included in wasm32-unknown-unknown builds.
+getrandom = { workspace = true, features = ["wasm_js"] }
+
+[target.'cfg(all(target_family = "wasm"))'.dependencies]
+wasm-bindgen = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+mysteryn-keys = { git = "https://github.com/Mysteryn-Lab/mysteryn-keys.git" }
+
+[dev-dependencies]
+serde_ipld_dagcbor = "0.6"
+serde_json = "1.0"
+mysteryn-keys = { git = "https://github.com/Mysteryn-Lab/mysteryn-keys.git", features = ["bls12381"]}
+
+[target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dev-dependencies]
+tokio = { version = "^1", features = ["macros", "test-util"] }
+
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[[example]]
+name = "quick-start"
+test = false
+
+[[example]]
+name = "custom-keys"
+test = false
