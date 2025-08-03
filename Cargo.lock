@@ -1064,6 +1064,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "mysteryn-core"
+version = "0.1.0"
+source = "git+https://github.com/Mysteryn-Lab/mysteryn-crypto.git#6f5c908d9022eda96b09ad8f1a44397c6c1e090d"
+dependencies = [
+ "ambassador",
+ "base32ct",
+ "base64",
+ "bs58",
+ "bytes",
+ "data-encoding",
+ "data-encoding-macro",
+ "dyn-clone",
+ "getrandom 0.3.3",
+ "hex",
+ "phf",
+ "rand 0.9.2",
+ "reed-solomon",
+ "reed_solomon_rs",
+ "serde",
+ "serde-wasm-bindgen",
+ "thiserror",
+ "unsigned-varint 0.8.0",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "mysteryn-crypto"
 version = "0.1.0"
 dependencies = [
@@ -1072,7 +1098,7 @@ dependencies = [
  "hex",
  "multihash-codetable",
  "multihash-derive",
- "mysteryn-core",
+ "mysteryn-core 0.1.0 (git+https://github.com/Mysteryn-Lab/mysteryn-crypto.git)",
  "mysteryn-keys",
  "rand 0.9.2",
  "serde",
@@ -1089,6 +1115,7 @@ dependencies = [
 [[package]]
 name = "mysteryn-keys"
 version = "0.1.0"
+source = "git+https://github.com/Mysteryn-Lab/mysteryn-keys.git#5f57d1a0ce6c15f5a5c6cfda41c1ea2488c8280a"
 dependencies = [
  "ambassador",
  "base32ct",
@@ -1111,7 +1138,7 @@ dependencies = [
  "multicodec",
  "multihash-codetable",
  "multihash-derive",
- "mysteryn-core",
+ "mysteryn-core 0.1.0 (git+https://github.com/Mysteryn-Lab/mysteryn-crypto.git)",
  "p521",
  "phf",
  "rand 0.8.5",
