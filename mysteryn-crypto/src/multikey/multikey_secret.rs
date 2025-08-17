@@ -11,6 +11,7 @@ use crate::{
         write_varint_u64_unsafe, write_varint_usize, write_varint_usize_unsafe,
     },
 };
+use multihash_codetable::{Code, MultihashDigest};
 use rand::{RngCore, rng};
 use std::{
     any::Any,
@@ -23,14 +24,19 @@ pub const DEFAULT_NONCE_LENGTH: usize = 12;
 pub const MIN_NONCE_LENGTH: usize = 8;
 
 /// The Multikey secret key.
-/// Internal format: `(key, attributes, hrp)`.
+/// Internal format: `(key, attributes, hrp, hash)`.
 /// The attribute `KEY_DATA` is not set to save a memory - it is automaticaly
 /// inserted on serialization.
 #[derive(Clone)]
 pub struct MultikeySecretKey<KF: KeyFactory>(
+    // Inner secret key.
     Box<dyn SecretKeyTrait>,
+    // Key attributes, excluding `KEY_DATA`.
     KeyAttributes,
+    // HRP.
     Option<String>,
+    // Key hash.
+    Vec<u8>,
     PhantomData<KF>,
 );
 
@@ -63,12 +69,24 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             attributes.set_public_hrp(Some(public_hrp));
         }
         let key = KF::new_secret(algorithm, &attributes)?;
-        Ok(Self(
+        Ok(Self::from_key_attributes(
             key,
             attributes,
             hrp.map(std::string::ToString::to_string),
-            PhantomData,
         ))
+    }
+
+    pub(crate) fn from_key_attributes(
+        key: Box<dyn SecretKeyTrait>,
+        mut attributes: KeyAttributes,
+        hrp: Option<String>,
+    ) -> Self {
+        // Remove key data, as we have the key instance.
+        attributes.set_key_data(None);
+        let mut k = Self(key, attributes, hrp, vec![], PhantomData::<KF>);
+        let h = Code::Blake3_256.digest(&k.to_bytes());
+        k.3 = h.digest().to_vec();
+        k
     }
 
     pub fn hrp(&self) -> &str {
@@ -126,7 +144,7 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             return Err(Error::InvalidKey("no key data".to_owned()));
         };
         let key = KF::secret_from_bytes(key_codec, key_data, &attributes)?;
-        Ok(Self(key, attributes, hrp, PhantomData))
+        Ok(Self::from_key_attributes(key, attributes, hrp))
     }
 
     /// Get public Multikey from this secret key.
@@ -142,7 +160,7 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             attributes.set_algorithm_name(Some(self.algorithm_name()));
         }
         let hrp = self.public_hrp();
-        MultikeyPublicKey::<KF>::new(
+        MultikeyPublicKey::<KF>::from_key_attributes(
             public_key,
             attributes,
             if hrp.is_empty() {
@@ -183,7 +201,7 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
             attributes.set_algorithm_name(Some(self.algorithm_name()));
         }
         let hrp = self.public_hrp();
-        Box::new(MultikeyPublicKey::<KF>::new(
+        Box::new(MultikeyPublicKey::<KF>::from_key_attributes(
             public_key,
             attributes,
             if hrp.is_empty() {
@@ -464,5 +482,27 @@ impl<KF: KeyFactory> TryFrom<Box<dyn SecretKeyTrait>> for MultikeySecretKey<KF> 
             return Err(Error::InvalidKey("not a multikey".to_string()));
         };
         Ok(k.clone())
+    }
+}
+
+impl<KF: KeyFactory> PartialEq for MultikeySecretKey<KF> {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare by key hashes.
+        self.3 == other.3
+    }
+}
+
+impl<KF: KeyFactory> Eq for MultikeySecretKey<KF> {}
+
+impl<KF: KeyFactory> PartialOrd for MultikeySecretKey<KF> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<KF: KeyFactory> Ord for MultikeySecretKey<KF> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Compare by key hashes.
+        self.3.cmp(&other.3)
     }
 }

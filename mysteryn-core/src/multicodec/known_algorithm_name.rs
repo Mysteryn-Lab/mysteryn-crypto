@@ -30,6 +30,8 @@ pub const Falcon512: &str = "Falcon-512";
 #[allow(non_upper_case_globals)]
 pub const Falcon1024: &str = "Falcon-1024";
 pub const MLDSA44: &str = "ML-DSA-44";
+pub const MLDSA65: &str = "ML-DSA-65";
+pub const MLDSA87: &str = "ML-DSA-87";
 pub const HMAC_SHA256: &str = "HMAC-SHA-256";
 
 pub static ALGORITHM_NAME_TO_SECRET_CODE: phf::Map<&'static str, u64> = phf_map! {

@@ -12,6 +12,7 @@ use crate::{
         write_varint_usize_unsafe,
     },
 };
+use multihash_codetable::{Code, MultihashDigest};
 use serde::{Deserialize, Serialize};
 use std::{
     any::Any,
@@ -20,11 +21,20 @@ use std::{
     str::FromStr,
 };
 
+/// The Multikey public key.
+/// Internal format: `(key, attributes, hrp, hash)`.
+/// The attribute `KEY_DATA` is not set to save a memory - it is automaticaly
+/// inserted on serialization.
 #[derive(Clone)]
 pub struct MultikeyPublicKey<KF: KeyFactory>(
+    // Inner public key.
     Box<dyn PublicKeyTrait>,
+    // Key attributes, excluding `KEY_DATA`.
     KeyAttributes,
+    // HRP.
     Option<String>,
+    // Key hash.
+    Vec<u8>,
     PhantomData<KF>,
 );
 
@@ -35,12 +45,17 @@ impl<KF: KeyFactory> AsRef<MultikeyPublicKey<KF>> for MultikeyPublicKey<KF> {
 }
 
 impl<KF: KeyFactory> MultikeyPublicKey<KF> {
-    pub(crate) fn new(
+    pub(crate) fn from_key_attributes(
         key: Box<dyn PublicKeyTrait>,
-        attributes: KeyAttributes,
+        mut attributes: KeyAttributes,
         hrp: Option<String>,
     ) -> Self {
-        Self(key, attributes, hrp, PhantomData::<KF>)
+        // Remove key data, as we have the key instance.
+        attributes.set_key_data(None);
+        let mut k = Self(key, attributes, hrp, vec![], PhantomData::<KF>);
+        let h = Code::Blake3_256.digest(&k.to_bytes());
+        k.3 = h.digest().to_vec();
+        k
     }
 
     /// Return bytes of the inner key
@@ -80,7 +95,7 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
             )
         };
         // Key attributes
-        let mut attributes = KeyAttributes::from_reader(&mut data)?;
+        let attributes = KeyAttributes::from_reader(&mut data)?;
         if key_codec == multicodec_prefix::CUSTOM && attributes.get_algorithm_name()?.is_none() {
             return Err(Error::InvalidKey("no algorithm name".to_string()));
         }
@@ -89,9 +104,8 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
         } else {
             return Err(Error::InvalidKey("no key data".to_owned()));
         };
-        attributes.set_key_data(None);
         let key = KF::public_from_bytes(key_codec, &key_data, &attributes)?;
-        Ok(Self(key, attributes, hrp, PhantomData))
+        Ok(Self::from_key_attributes(key, attributes, hrp))
     }
 }
 
@@ -281,26 +295,24 @@ impl<KF: KeyFactory> TryFrom<&Did> for MultikeyPublicKey<KF> {
 }
 
 impl<KF: KeyFactory> PartialEq for MultikeyPublicKey<KF> {
-    fn eq(&self, other: &MultikeyPublicKey<KF>) -> bool {
-        let a = self.to_bytes();
-        let b = other.to_bytes();
-        a == b
+    fn eq(&self, other: &Self) -> bool {
+        // Compare by key hashes.
+        self.3 == other.3
     }
 }
 
 impl<KF: KeyFactory> Eq for MultikeyPublicKey<KF> {}
 
 impl<KF: KeyFactory> PartialOrd for MultikeyPublicKey<KF> {
-    fn partial_cmp(&self, other: &MultikeyPublicKey<KF>) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<KF: KeyFactory> Ord for MultikeyPublicKey<KF> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let a = self.to_bytes();
-        let b = other.to_bytes();
-        a.cmp(&b)
+        // Compare by key hashes.
+        self.3.cmp(&other.3)
     }
 }
 

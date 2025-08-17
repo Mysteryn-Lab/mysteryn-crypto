@@ -64,6 +64,7 @@ impl<KF: KeyFactory> SignatureTrait for Multisig<KF> {
         self.0.as_bytes()
     }
 
+    /// Inner signature bytes are in Multisig format.
     fn raw(&self) -> &RawSignature {
         self.0.raw()
     }
@@ -102,8 +103,9 @@ impl<KF: KeyFactory> TryFrom<&[u8]> for Multisig<KF> {
         // Attributes
         let attributes = SignatureAttributes::from_reader(&mut buf)?;
 
-        // We keep Multisig raw bytes as-is, without decoding
-        //let attributes = SignatureAttributes::new();
+        // We keep Multisig raw bytes as-is, without decoding.
+        // It differs in format from the inner algorithm signature, but is used
+        // by Multisig only.
         Ok(Self(
             KF::signature_from_bytes(signature_codec, bytes, &attributes)?,
             PhantomData::<KF>,
@@ -210,11 +212,23 @@ impl<KF: KeyFactory> TryFrom<Box<dyn SignatureTrait>> for Multisig<KF> {
 }
 
 impl<KF: KeyFactory> PartialEq for Multisig<KF> {
-    fn eq(&self, other: &Multisig<KF>) -> bool {
-        let a = self.as_bytes();
-        let b = other.as_bytes();
-        a == b
+    fn eq(&self, other: &Self) -> bool {
+        // Compare by raw signatures.
+        self.0.raw().as_slice() == other.0.raw().as_slice()
     }
 }
 
 impl<KF: KeyFactory> Eq for Multisig<KF> {}
+
+impl<KF: KeyFactory> PartialOrd for Multisig<KF> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<KF: KeyFactory> Ord for Multisig<KF> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Compare by raw signatures.
+        self.0.raw().as_slice().cmp(other.0.raw().as_slice())
+    }
+}

@@ -1066,7 +1066,7 @@ dependencies = [
 [[package]]
 name = "mysteryn-core"
 version = "0.1.0"
-source = "git+https://github.com/Mysteryn-Lab/mysteryn-crypto.git#6f5c908d9022eda96b09ad8f1a44397c6c1e090d"
+source = "git+https://github.com/Mysteryn-Lab/mysteryn-crypto.git#37a2046558223a958faf52c4798e027ed936d7c3"
 dependencies = [
  "ambassador",
  "base32ct",
@@ -1091,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "mysteryn-crypto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ambassador",
  "getrandom 0.3.3",
@@ -1115,7 +1115,7 @@ dependencies = [
 [[package]]
 name = "mysteryn-keys"
 version = "0.1.0"
-source = "git+https://github.com/Mysteryn-Lab/mysteryn-keys.git#5f57d1a0ce6c15f5a5c6cfda41c1ea2488c8280a"
+source = "git+https://github.com/Mysteryn-Lab/mysteryn-keys.git#5395cf4c3707848e8556ecf2299ee4d6adb83534"
 dependencies = [
  "ambassador",
  "base32ct",
@@ -1518,9 +1518,9 @@ dependencies = [
 
 [[package]]
 name = "rustversion"
-version = "1.0.21"
+version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a0d197bd2c9dc6e53b84da9556a69ba4cdfab8619eb41a8bd1cc2027a0f6b1d"
+checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
 name = "ryu"

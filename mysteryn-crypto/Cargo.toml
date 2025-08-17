@@ -1,7 +1,7 @@
 [package]
 name = "mysteryn-crypto"
 description = "The Mysteryn cryptography"
-version = "0.1.0"
+version = "0.1.1"
 edition = { workspace = true }
 rust-version = { workspace = true }
 keywords = ["crypto", "signature", "authorization"]
@@ -14,7 +14,7 @@ readme = "README.md"
 # Starting from Rust 1.87 all Wasm features are on, so need to specify 
 # `wasm-opt` features explicitly.
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-Oz", "--enable-mutable-globals", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
 
 [dependencies]
 serde = { workspace = true }

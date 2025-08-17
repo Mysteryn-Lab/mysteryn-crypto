@@ -41,6 +41,8 @@ Post-quantum algorithms:
 - Falcon512
 - Falcon1024
 - ML-DSA-44
+- ML-DSA-65
+- ML-DSA-87
 - MLKEM512
 - FAEST-128f
 - SLH-DSA-shake-128f

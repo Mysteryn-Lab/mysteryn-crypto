@@ -2,48 +2,48 @@
 
 This crate provides a range of cryptographic functions, including support for digital signatures, public and private keys, identities, and hashes. It also includes functionalities for Decentralized Identifiers (DIDs) and encodings.
 
-Key features:
+Features:
 
 - Implements Multikey cryptographic keys and Multisig digital signature codecs.
 
 - Can be used with Rust and Wasm targets, including Node.js and web browsers, to enable digital signature functionalities.
 
-- Offers flexibility by allowing the list of supported cryptographic algorithms to be customized or expanded with new custom algorithms.
+- Allows the list of supported cryptographic algorithms to be customized or expanded with new custom algorithms.
 
 The following **Classic digital signature** algorithms are included:
 
 | Algorithm                                                                                 | Bits of security | Public key bytes | Signature bytes | Signing time, µs | Verifying time, µs | Memory allocation, bytes |
-| ----------------------------------------------------------------------------------------- | ---------------- | ---------------- | --------------- | ----------------:| ------------------:| ------------------------:|
+| ----------------------------------------------------------------------------------------- |:----------------:| ----------------:| ---------------:| ----------------:| ------------------:| ------------------------:|
 | [Ed25519](https://datatracker.ietf.org/doc/html/rfc8032)                                  | 128              | 32               | 64              | 28               | 2,555              | 64                       |
-| **[Ed448](https://datatracker.ietf.org/doc/html/rfc8032)**                                | **224**          | 57               | 114             | 19,120           | 25,160             | 8,192,000                |
-| **Secp256k1**                                                                             | **256**          | 33               | 64              | 158              | 313                | 64                       |
-| [P256](https://neuromancer.sk/std/nist/P-256)                                             | 128              | 33               | 90*             | 577              | 757                | 128                      |
-| [P384](https://neuromancer.sk/std/nist/P-384)                                             | 192              | 49               | 133*            | 1,113            | 1,867              | 192                      |
-| **[P521](https://neuromancer.sk/std/nist/P-521)**                                         | **256**          | 66               | 182*            | 1,543            | 2,442              | 264                      |
-| [BLS12-381G1](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-bls-signature-00)     | 128              | 96               | 48              | 1,513            | 6,847              | 48                       |
+| **[Ed448](https://datatracker.ietf.org/doc/html/rfc8032)**                                | **224**          | 57               | 114             | 16,060           | 16,540             | 2,757                    |
+| **Secp256k1**                                                                             | **256**          | 33               | 64              | 123              | 165                | 64                       |
+| [P256](https://neuromancer.sk/std/nist/P-256)                                             | 128              | 33               | 90*             | 577              | 673                | 128                      |
+| [P384](https://neuromancer.sk/std/nist/P-384)                                             | 192              | 49               | 133*            | 1,113            | 1,554              | 192                      |
+| **[P521](https://neuromancer.sk/std/nist/P-521)**                                         | **256**          | 66               | 182*            | 1,543            | 2,015              | 264                      |
+| [BLS12-381G1](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-bls-signature-00)     | 128              | 96               | 48              | 1,513            | 4,967              | 48                       |
 | [~~BLS12-381G2~~](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-bls-signature-00) | 128              | 48               | 96              |                  |                    |                          |
-| RSA 3072                                                                                  | 128              | 422              | 384             | 9,388            | 553                | 517,900                  |
-| RSA 4096                                                                                  | 140              | 550              | 512             | 17,860           | 899                | 823,400                  |
+| RSA 3072                                                                                  | 128              | 422              | 384             | 9,388            | 556                | 24,950                   |
+| RSA 4096                                                                                  | 140              | 550              | 512             | 17,860           | 896                | 25,210                   |
 | X25519                                                                                    | 128              | 32               | 64              | 148              | 2,889              | 326                      |
 | ~~X448~~                                                                                  | 224              | 56               |                 |                  |                    |                          |
 | **HmacSha256**                                                                            | **256**          | -                | 32              | 2                | 2                  | 32                       |
 
 The following **Post-quantum digital signature** algorithms are included:
 
-| Algorithm                                                                          | Security level | Bits of security | Public key bytes | Signature bytes | Signing time, µs | Verifying time, µs | Memory allocation, bytes |
-| ---------------------------------------------------------------------------------- | -------------- | ---------------- | ---------------- | --------------- | ----------------:| ------------------:| ------------------------:|
-| [Falcon512](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)         | 1              | 108              | 897              | 666             | 2,079            | 268                | 1,273,000                |
-| **[Falcon1024](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)**    | **5**          | 252              | 1793             | 1280            | 4,395            | 308                | 2,756,000                |
-| [ML-DSA-44](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)         | 2              | 128*             | 1312             | 2420            | 950              | 494                | 2,420                    |
-| [~~ML-DSA-65~~](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)     | 3              | 192              | 1952             | 3309            |                  |                    |                          |
-| **[~~ML-DSA-87~~](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)** | **5**          | 256              | 2592             | 4627            |                  |                    |                          |
-| MLKEM512                                                                           | 1              | 128              | 800              |                 | 247              | 2,987              | 3,239                    |
-| FAEST-128f                                                                         | 1              | 128              | 32               | 6,336           | 30,870           | 26,670             | 1,789,000                |
-| SLH-DSA-shake-128f                                                                 | 1              | 128              | 32               | 17,088          | 210,500          | 14,780             | 17,080                   |
-| ~~SLH-DSA-shake-192f~~                                                             | 3              | 192              | 48               | 35,664          |                  |                    |                          |
-| ~~SLH-DSA-shake-256f~~                                                             | 5              | 256              | 64               | 49,856          |                  |                    |                          |
+| Algorithm                                                                       | Security level | Bits of security | Public key bytes | Signature bytes | Signing time, µs | Verifying time, µs | Memory allocation, bytes |
+| ------------------------------------------------------------------------------- |:--------------:|:----------------:| ----------------:| ---------------:| ----------------:| ------------------:| ------------------------:|
+| [Falcon512](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)      | 1              | 108              | 897              | 666             | 1,841            | 100                | 157,600                  |
+| **[Falcon1024](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)** | **5**          | 252              | 1,793            | 1,280           | 3,068            | 215                | 315,300                  |
+| [ML-DSA-44](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)      | 2              | 128*             | 1,312            | 2,420           | 712              | 187                | 2,420                    |
+| [ML-DSA-65](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)      | 3              | 192              | 1,952            | 3,309           | 1,318            | 291                | 3,309                    |
+| **[ML-DSA-87](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)**  | **5**          | 256              | 2,592            | 4,627           | 1,469            | 477                | 4,627                    |
+| MLKEM512                                                                        | 1              | 128              | 800              |                 | 247              | 2,987              | 3,239                    |
+| FAEST-128f                                                                      | 1              | 128              | 32               | 6,336           | 30,870           | 25,670             | 433,700                  |
+| SLH-DSA-shake-128f                                                              | 1              | 128              | 32               | 17,088          | 198,000          | 12,590             | 17,088                   |
+| ~~SLH-DSA-shake-192f~~                                                          | 3              | 192              | 48               | 35,664          |                  |                    |                          |
+| ~~SLH-DSA-shake-256f~~                                                          | 5              | 256              | 64               | 49,856          |                  |                    |                          |
 
-**Custom digital signature** algorithms can be added by implementing `SecretKeyTrait`, `PublicKeyTrait` and `SignatureTrait`, and including them as a custom key variant. See ["./examples/custom-keys.rs"](./examples/custom-keys.rs) for a demo.
+**Custom digital signature** algorithms can be added by implementing `SecretKeyTrait`, `PublicKeyTrait` and `SignatureTrait`, and including them as a custom key variant. See [`./examples/custom-keys.rs`](./examples/custom-keys.rs) for a demo.
 
 ## Examples
 
@@ -396,10 +396,10 @@ where
 
 - `method-specific-id-varbytes` - varbytes, unique method specific id, which may include colons (":"):
   
-  - "did:key": public key bytes,
-  - "did:pkh" with the Identity (0x00) codec: identity bytes
-  - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`,
-  - "did:*" with the Raw (0x55) codec: a string of method specific id for general DIDs;
+   - "did:key": public key bytes,
+   - "did:pkh" with the Identity (0x00) codec: identity bytes
+   - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`,
+   - "did:*" with the Raw (0x55) codec: a string of method specific id for general DIDs;
 
 - `url-varbytes` - varbytes, an *UTF-8* encoded string representing the [DID URL parameters](https://www.w3.org/TR/did-core/#did-url-syntax).
 
@@ -529,21 +529,21 @@ pubtest_xa8tkszqqpqysrhqvweac9lzyhw6ceum9pk2lxaujpv6gqp50uww65ykrqhp83j22gpe8wzx
 To build this library to the WebAssembly:
 
 1. Install`wasm-pack`:
-
+   
    This version does not require your "Cargo.toml" to have `crate-type = ["cdylib", "rlib"]`.
-
+   
    ```bash
    cargo install --git https://github.com/druide/wasm-pack.git
    ```
 
 2. Build a web package:
-
+   
    ```bash
    wasm-pack build --target web
    ```
 
 3. Build a npm module:
-
+   
    ```bash
    wasm-pack build --target nodejs
    ```
