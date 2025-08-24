@@ -37,9 +37,9 @@ pub const KEY_PUBLIC_HRP: u64 = 0x0e;
  * `PublicHrp` (0x0e) : Public key human-readable prefix (used for a secret key).
  */
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-pub struct KeyAttributes(pub BTreeMap<u64, Vec<u8>>);
+pub struct Attributes(pub BTreeMap<u64, Vec<u8>>);
 
-impl KeyAttributes {
+impl Attributes {
     pub fn new() -> Self {
         Self(BTreeMap::new())
     }
@@ -48,15 +48,15 @@ impl KeyAttributes {
         let count = read_varint_usize(reader)
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::EncodingError("cannot read attribute count".to_owned()))?;
-        let mut ma = Self(BTreeMap::new());
+        let mut attributes = Self::new();
         for _ in 0..count {
             let attr_id = read_varint_u64(reader)
                 .map_err(|e| Error::IOError(e.to_string()))?
                 .ok_or_else(|| Error::EncodingError("cannot read attribute id".to_owned()))?;
-            let v = read_varbytes(reader).map_err(|e| Error::IOError(e.to_string()))?;
-            ma.0.insert(attr_id, v);
+            let value = read_varbytes(reader).map_err(|e| Error::IOError(e.to_string()))?;
+            attributes.0.insert(attr_id, value);
         }
-        Ok(ma)
+        Ok(attributes)
     }
 
     pub fn to_writer<W: Write + Unpin>(&self, writer: &mut W) -> Result<()> {
@@ -69,30 +69,28 @@ impl KeyAttributes {
     }
 
     pub fn get_varint(&self, key: u64) -> Result<Option<u64>> {
-        match self.0.get(&key) {
-            Some(bytes) => {
+        self.0
+            .get(&key)
+            .map(|bytes| {
                 let mut buf = bytes.as_slice();
-                match read_varint_u64(&mut buf) {
-                    Ok(v) => Ok(v),
-                    Err(e) => Err(Error::IOError(e.to_string())),
-                }
-            }
-            None => Ok(None),
-        }
+                read_varint_u64(&mut buf).map_err(|e| Error::IOError(e.to_string()))
+            })
+            .transpose()
+            .map(std::option::Option::flatten)
     }
 
     pub fn set_varint(&mut self, key: u64, value: Option<u64>) {
         if let Some(value) = value {
             let mut buffer = unsigned_varint::encode::u64_buffer();
-            let to_write = unsigned_varint::encode::u64(value, &mut buffer).to_vec();
-            self.0.insert(key, to_write);
+            let encoded = unsigned_varint::encode::u64(value, &mut buffer);
+            self.0.insert(key, encoded.to_vec());
         } else {
             self.0.remove(&key);
         }
     }
 
-    pub fn get_bytes(&self, key: u64) -> Option<&Vec<u8>> {
-        self.0.get(&key)
+    pub fn get_bytes(&self, key: u64) -> Option<&[u8]> {
+        self.0.get(&key).map(Vec::as_slice)
     }
 
     pub fn set_bytes(&mut self, key: u64, bytes: Option<&[u8]>) {
@@ -102,64 +100,107 @@ impl KeyAttributes {
             self.0.remove(&key);
         }
     }
+}
+
+impl Default for Attributes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+pub struct KeyAttributes(pub Attributes);
+
+impl KeyAttributes {
+    pub fn new() -> Self {
+        Self(Attributes::new())
+    }
+
+    pub fn from_reader<R: Read + Unpin>(reader: &mut R) -> Result<Self> {
+        Ok(Self(Attributes::from_reader(reader)?))
+    }
+
+    pub fn to_writer<W: Write + Unpin>(&self, writer: &mut W) -> Result<()> {
+        self.0.to_writer(writer)
+    }
+
+    pub fn get_varint(&self, key: u64) -> Result<Option<u64>> {
+        self.0.get_varint(key)
+    }
+
+    pub fn set_varint(&mut self, key: u64, value: Option<u64>) {
+        self.0.set_varint(key, value);
+    }
+
+    pub fn get_bytes(&self, key: u64) -> Option<&[u8]> {
+        self.0.get_bytes(key)
+    }
+
+    pub fn set_bytes(&mut self, key: u64, bytes: Option<&[u8]>) {
+        self.0.set_bytes(key, bytes);
+    }
 
     pub fn get_key_is_encrypted(&self) -> Result<bool> {
-        Ok(self.get_varint(KEY_IS_ENCRYPTED)?.unwrap_or(0) != 0)
+        Ok(self.0.get_varint(KEY_IS_ENCRYPTED)?.unwrap_or(0) != 0)
     }
 
     pub fn set_key_is_encrypted(&mut self, key_is_encrypted: bool) {
-        self.set_varint(
+        self.0.set_varint(
             KEY_IS_ENCRYPTED,
             if key_is_encrypted { Some(1) } else { None },
         );
     }
 
-    pub fn get_key_data(&self) -> Option<&Vec<u8>> {
-        self.get_bytes(KEY_DATA)
+    pub fn get_key_data(&self) -> Option<&[u8]> {
+        self.0.get_bytes(KEY_DATA)
     }
 
     pub fn set_key_data(&mut self, key_data: Option<&[u8]>) {
-        self.set_bytes(KEY_DATA, key_data);
+        self.0.set_bytes(KEY_DATA, key_data);
     }
 
     pub fn get_algorithm_name(&self) -> Result<Option<&str>> {
-        let Some(bytes) = self.get_bytes(KEY_ALGRORITHM_NAME) else {
-            return Ok(None);
-        };
-        Ok(Some(
-            std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string()))?,
-        ))
+        self.0
+            .get_bytes(KEY_ALGRORITHM_NAME)
+            .map(|bytes| std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string())))
+            .transpose()
     }
 
     pub fn set_algorithm_name(&mut self, name: Option<&str>) {
-        self.set_bytes(KEY_ALGRORITHM_NAME, name.map(str::as_bytes));
+        self.0
+            .set_bytes(KEY_ALGRORITHM_NAME, name.map(str::as_bytes));
     }
 
     pub fn get_key_type(&self) -> Result<Option<u64>> {
-        self.get_varint(KEY_TYPE)
+        self.0.get_varint(KEY_TYPE)
     }
 
     pub fn set_key_type(&mut self, key_type: Option<u64>) {
-        self.set_varint(KEY_TYPE, key_type);
+        self.0.set_varint(KEY_TYPE, key_type);
     }
 
     pub fn get_public_hrp(&self) -> Result<Option<&str>> {
-        let Some(bytes) = self.get_bytes(KEY_PUBLIC_HRP) else {
-            return Ok(None);
-        };
-        Ok(Some(
-            std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string()))?,
-        ))
+        self.0
+            .get_bytes(KEY_PUBLIC_HRP)
+            .map(|bytes| std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string())))
+            .transpose()
     }
 
     pub fn set_public_hrp(&mut self, name: Option<&str>) {
-        self.set_bytes(KEY_PUBLIC_HRP, name.map(str::as_bytes));
+        self.0.set_bytes(KEY_PUBLIC_HRP, name.map(str::as_bytes));
     }
 }
 
 impl Default for KeyAttributes {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl TryFrom<KeyAttributes> for Attributes {
+    type Error = Error;
+    fn try_from(attrs: KeyAttributes) -> Result<Self> {
+        Ok(attrs.0)
     }
 }
 
@@ -188,127 +229,91 @@ pub const BLS12381_BASIC_SCHEME: u64 = 0x00;
  */
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SignatureAttributes(BTreeMap<u64, Vec<u8>>);
+pub struct SignatureAttributes(pub Attributes);
 
 impl SignatureAttributes {
     pub fn new() -> Self {
-        Self(BTreeMap::new())
+        Self(Attributes::new())
     }
 
     pub fn raw(&self) -> &BTreeMap<u64, Vec<u8>> {
-        &self.0
+        &self.0.0
     }
 
     pub fn from_reader<R: Read + Unpin>(reader: &mut R) -> Result<Self> {
-        let count = read_varint_usize(reader)
-            .map_err(|e| Error::IOError(e.to_string()))?
-            .ok_or_else(|| Error::EncodingError("cannot read attribute count".to_owned()))?;
-        let mut ma = Self(BTreeMap::new());
-        for _ in 0..count {
-            let attr_id = read_varint_u64(reader)
-                .map_err(|e| Error::IOError(e.to_string()))?
-                .ok_or_else(|| Error::EncodingError("cannot read attribute id".to_owned()))?;
-            let v = read_varbytes(reader).map_err(|e| Error::IOError(e.to_string()))?;
-            ma.0.insert(attr_id, v);
-        }
-        Ok(ma)
+        Ok(Self(Attributes::from_reader(reader)?))
     }
 
     pub fn to_writer<W: Write + Unpin>(&self, writer: &mut W) -> Result<()> {
-        write_varint_usize(self.0.len(), writer).map_err(|e| Error::IOError(e.to_string()))?;
-        for (attr_id, attr_data) in &self.0 {
-            write_varint_u64(*attr_id, writer).map_err(|e| Error::IOError(e.to_string()))?;
-            write_varbytes(attr_data, writer).map_err(|e| Error::IOError(e.to_string()))?;
-        }
-        Ok(())
+        self.0.to_writer(writer)
     }
 
     pub fn get_varint(&self, key: u64) -> Result<Option<u64>> {
-        match self.0.get(&key) {
-            Some(bytes) => {
-                let mut buf = bytes.as_slice();
-                match read_varint_u64(&mut buf) {
-                    Ok(v) => Ok(v),
-                    Err(e) => Err(Error::IOError(e.to_string())),
-                }
-            }
-            None => Ok(None),
-        }
+        self.0.get_varint(key)
     }
 
     pub fn set_varint(&mut self, key: u64, value: Option<u64>) {
-        if let Some(value) = value {
-            let mut buffer = unsigned_varint::encode::u64_buffer();
-            let to_write = unsigned_varint::encode::u64(value, &mut buffer).to_vec();
-            self.0.insert(key, to_write);
-        } else {
-            self.0.remove(&key);
-        }
+        self.0.set_varint(key, value);
     }
 
-    pub fn get_bytes(&self, key: u64) -> Option<&Vec<u8>> {
-        self.0.get(&key)
+    pub fn get_bytes(&self, key: u64) -> Option<&[u8]> {
+        self.0.get_bytes(key)
     }
 
     pub fn set_bytes(&mut self, key: u64, bytes: Option<&[u8]>) {
-        if let Some(bytes) = bytes {
-            self.0.insert(key, bytes.to_vec());
-        } else {
-            self.0.remove(&key);
-        }
+        self.0.set_bytes(key, bytes);
     }
 
-    pub fn get_signature_data(&self) -> Option<&Vec<u8>> {
-        self.get_bytes(SIG_DATA)
+    pub fn get_signature_data(&self) -> Option<&[u8]> {
+        self.0.get_bytes(SIG_DATA)
     }
 
     pub fn set_signature_data(&mut self, key_data: Option<&[u8]>) {
-        self.set_bytes(SIG_DATA, key_data);
+        self.0.set_bytes(SIG_DATA, key_data);
     }
 
     pub fn get_payload_encoding(&self) -> Result<Option<u64>> {
-        self.get_varint(SIG_PAYLOAD_ENCODING)
+        self.0.get_varint(SIG_PAYLOAD_ENCODING)
     }
 
     pub fn set_payload_encoding(&mut self, encoding: Option<u64>) {
-        self.set_varint(SIG_PAYLOAD_ENCODING, encoding);
+        self.0.set_varint(SIG_PAYLOAD_ENCODING, encoding);
     }
 
     pub fn get_scheme(&self) -> Result<Option<u64>> {
-        self.get_varint(SIG_SCHEME)
+        self.0.get_varint(SIG_SCHEME)
     }
 
     pub fn set_scheme(&mut self, hash_algorithm: Option<u64>) {
-        self.set_varint(SIG_SCHEME, hash_algorithm);
+        self.0.set_varint(SIG_SCHEME, hash_algorithm);
     }
 
     pub fn get_algorithm_name(&self) -> Result<Option<&str>> {
-        let Some(bytes) = self.get_bytes(SIG_ALGRORITHM_NAME) else {
-            return Ok(None);
-        };
-        Ok(Some(
-            std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string()))?,
-        ))
+        self.0
+            .get_bytes(SIG_ALGRORITHM_NAME)
+            .map(|bytes| std::str::from_utf8(bytes).map_err(|e| Error::IOError(e.to_string())))
+            .transpose()
     }
 
     pub fn set_algorithm_name(&mut self, name: Option<&str>) {
-        self.set_bytes(SIG_ALGRORITHM_NAME, name.map(str::as_bytes));
+        self.0
+            .set_bytes(SIG_ALGRORITHM_NAME, name.map(str::as_bytes));
     }
 
-    pub fn get_nonce(&self) -> Option<&Vec<u8>> {
-        self.get_bytes(SIG_NONCE)
+    pub fn get_nonce(&self) -> Option<&[u8]> {
+        self.0.get_bytes(SIG_NONCE)
     }
 
     pub fn set_nonce(&mut self, nonce: Option<&[u8]>) {
-        self.set_bytes(SIG_NONCE, nonce);
+        self.0.set_bytes(SIG_NONCE, nonce);
     }
 
-    pub fn get_public_key(&self) -> Option<&Vec<u8>> {
-        self.get_bytes(SIG_PUBLIC_KEY)
+    pub fn get_public_key(&self) -> Option<&[u8]> {
+        self.0.get_bytes(SIG_PUBLIC_KEY)
     }
 
     pub fn set_public_key(&mut self, public_key: Option<&[u8]>) {
-        self.set_bytes(SIG_PUBLIC_KEY, public_key);
+        self.0.set_bytes(SIG_PUBLIC_KEY, public_key);
     }
 }
 
@@ -318,5 +323,123 @@ impl Default for SignatureAttributes {
     }
 }
 
+impl TryFrom<SignatureAttributes> for Attributes {
+    type Error = Error;
+    fn try_from(attrs: SignatureAttributes) -> Result<Self> {
+        Ok(attrs.0)
+    }
+}
+
 // Custom attributes
 pub const HASH_ATTR_ID: u64 = 40;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_key_attributes_new() {
+        let attributes = KeyAttributes::new();
+        assert!(attributes.0.0.is_empty());
+    }
+
+    #[test]
+    fn test_key_attributes_rw() {
+        let mut attributes = KeyAttributes::new();
+        attributes.set_key_is_encrypted(true);
+        attributes.set_key_data(Some(&[1, 2, 3]));
+        attributes.set_algorithm_name(Some("test-algo"));
+        attributes.set_key_type(Some(1));
+        attributes.set_public_hrp(Some("hrp"));
+
+        let mut buffer = Vec::new();
+        attributes.to_writer(&mut buffer).unwrap();
+
+        let mut reader = Cursor::new(buffer);
+        let read_attributes = KeyAttributes::from_reader(&mut reader).unwrap();
+
+        assert_eq!(attributes, read_attributes);
+        assert!(read_attributes.get_key_is_encrypted().unwrap());
+        assert_eq!(read_attributes.get_key_data().unwrap(), &[1, 2, 3]);
+        assert_eq!(
+            read_attributes.get_algorithm_name().unwrap().unwrap(),
+            "test-algo"
+        );
+        assert_eq!(read_attributes.get_key_type().unwrap().unwrap(), 1);
+        assert_eq!(read_attributes.get_public_hrp().unwrap().unwrap(), "hrp");
+    }
+
+    #[test]
+    fn test_key_attributes_varint() {
+        let mut attributes = KeyAttributes::new();
+        attributes.set_varint(100, Some(12345));
+        assert_eq!(attributes.get_varint(100).unwrap(), Some(12345));
+        attributes.set_varint(100, None);
+        assert_eq!(attributes.get_varint(100).unwrap(), None);
+    }
+
+    #[test]
+    fn test_key_attributes_bytes() {
+        let mut attributes = KeyAttributes::new();
+        attributes.set_bytes(101, Some(&[4, 5, 6]));
+        assert_eq!(attributes.get_bytes(101).unwrap(), &[4, 5, 6]);
+        attributes.set_bytes(101, None);
+        assert_eq!(attributes.get_bytes(101), None);
+    }
+
+    #[test]
+    fn test_signature_attributes_new() {
+        let attributes = SignatureAttributes::new();
+        assert!(attributes.0.0.is_empty());
+    }
+
+    #[test]
+    fn test_signature_attributes_rw() {
+        let mut attributes = SignatureAttributes::new();
+        attributes.set_signature_data(Some(&[1, 2, 3]));
+        attributes.set_payload_encoding(Some(123));
+        attributes.set_scheme(Some(456));
+        attributes.set_algorithm_name(Some("test-sig-algo"));
+        attributes.set_nonce(Some(&[7, 8, 9]));
+        attributes.set_public_key(Some(&[10, 11, 12]));
+
+        let mut buffer = Vec::new();
+        attributes.to_writer(&mut buffer).unwrap();
+
+        let mut reader = Cursor::new(buffer);
+        let read_attributes = SignatureAttributes::from_reader(&mut reader).unwrap();
+
+        assert_eq!(attributes, read_attributes);
+        assert_eq!(read_attributes.get_signature_data().unwrap(), &[1, 2, 3]);
+        assert_eq!(
+            read_attributes.get_payload_encoding().unwrap().unwrap(),
+            123
+        );
+        assert_eq!(read_attributes.get_scheme().unwrap().unwrap(), 456);
+        assert_eq!(
+            read_attributes.get_algorithm_name().unwrap().unwrap(),
+            "test-sig-algo"
+        );
+        assert_eq!(read_attributes.get_nonce().unwrap(), &[7, 8, 9]);
+        assert_eq!(read_attributes.get_public_key().unwrap(), &[10, 11, 12]);
+    }
+
+    #[test]
+    fn test_signature_attributes_varint() {
+        let mut attributes = SignatureAttributes::new();
+        attributes.set_varint(200, Some(54321));
+        assert_eq!(attributes.get_varint(200).unwrap(), Some(54321));
+        attributes.set_varint(200, None);
+        assert_eq!(attributes.get_varint(200).unwrap(), None);
+    }
+
+    #[test]
+    fn test_signature_attributes_bytes() {
+        let mut attributes = SignatureAttributes::new();
+        attributes.set_bytes(201, Some(&[1, 2, 3]));
+        assert_eq!(attributes.get_bytes(201).unwrap(), &[1, 2, 3]);
+        attributes.set_bytes(201, None);
+        assert_eq!(attributes.get_bytes(201), None);
+    }
+}

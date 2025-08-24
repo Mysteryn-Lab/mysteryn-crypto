@@ -13,18 +13,9 @@ pub trait SecretDidTrait: SecretKeyTrait {
     }
 
     /// Provides a "did:pkh" DID
-    fn get_did_pkh(&self, method_name: &str, hrp: Option<&str>) -> Result<Did> {
+    fn get_did_pkh(&self, method_name: &str, hrp: &str) -> Result<Did> {
         let pk = self.public_key();
-        let hrp = if let Some(hrp) = hrp {
-            if hrp.is_empty() {
-                None
-            } else {
-                Some(hrp.to_string())
-            }
-        } else {
-            None
-        };
-        let id = Identity(hrp, Hash::hash_bytes(&pk.to_bytes()));
+        let id = Identity::new(hrp, Hash::hash_bytes(&pk.to_bytes()));
         Did::from_identity(&id, method_name)
     }
 }
@@ -38,17 +29,8 @@ pub trait PublicDidTrait: PublicKeyTrait {
     }
 
     /// Provides a "did:pkh" DID
-    fn get_did_pkh(&self, method_name: &str, hrp: Option<&str>) -> Result<Did> {
-        let hrp = if let Some(hrp) = hrp {
-            if hrp.is_empty() {
-                None
-            } else {
-                Some(hrp.to_string())
-            }
-        } else {
-            None
-        };
-        let id = Identity(hrp, Hash::hash_bytes(&self.to_bytes()));
+    fn get_did_pkh(&self, method_name: &str, hrp: &str) -> Result<Did> {
+        let id = Identity::new(hrp, Hash::hash_bytes(&self.to_bytes()));
         Did::from_identity(&id, method_name)
     }
 }

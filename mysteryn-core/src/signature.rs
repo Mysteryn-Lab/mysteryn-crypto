@@ -22,17 +22,21 @@ impl RawSignature {
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
+
+    fn to_base58(&self) -> String {
+        multibase::to_base58(self.as_slice())
+    }
 }
 
 impl Display for RawSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&multibase::to_base58(&self.0))
+        f.write_str(&self.to_base58())
     }
 }
 
 impl Debug for RawSignature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
+        f.write_str(&self.to_base58())
     }
 }
 
@@ -97,5 +101,57 @@ impl serde::de::Visitor<'_> for CustomVisitor {
         E: serde::de::Error,
     {
         RawSignature::from_str(v).map_err(|e| serde::de::Error::custom(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_raw_signature_from_bytes() {
+        let bytes: &[u8] = &[1, 2, 3, 4, 5];
+        let signature = RawSignature::from(bytes);
+        assert_eq!(signature.as_slice(), bytes);
+    }
+
+    #[test]
+    fn test_raw_signature_display_and_from_str() {
+        let bytes: &[u8] = &[0, 1, 2, 3, 255, 254, 253, 252];
+        let signature = RawSignature::from(bytes);
+        let base58_str = "z13DV616t9R";
+        assert_eq!(signature.to_string(), base58_str);
+
+        let parsed_signature = RawSignature::from_str(base58_str).unwrap();
+        assert_eq!(parsed_signature, signature);
+
+        assert!(RawSignature::from_str("invalid base58").is_err());
+    }
+
+    #[test]
+    fn test_raw_signature_serde_human_readable() {
+        let bytes: &[u8] = &[10, 20, 30, 40, 50];
+        let signature = RawSignature::from(bytes);
+
+        let json_str = serde_json::to_string(&signature).unwrap();
+        let expected_str = format!("\"{}\"", signature.to_base58());
+        assert_eq!(json_str, expected_str);
+
+        let deserialized_signature: RawSignature = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized_signature, signature);
+    }
+
+    #[test]
+    fn test_raw_signature_serde_binary() {
+        let bytes: &[u8] = &[100, 110, 120, 130, 140];
+        let signature = RawSignature::from(bytes);
+
+        let cbor_bytes = serde_ipld_dagcbor::to_vec(&signature).unwrap();
+        let expected_bytes = [69, 100, 110, 120, 130, 140];
+        assert_eq!(cbor_bytes, &expected_bytes[..]);
+
+        let deserialized_signature: RawSignature =
+            serde_ipld_dagcbor::from_slice(&cbor_bytes).unwrap();
+        assert_eq!(deserialized_signature, signature);
     }
 }

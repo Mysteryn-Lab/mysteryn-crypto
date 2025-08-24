@@ -12,10 +12,13 @@ use crate::{
         write_varint_usize_unsafe,
     },
 };
+use concat_string::concat_string;
 use multihash_codetable::{Code, MultihashDigest};
+use mysteryn_core::concat_vec;
 use serde::{Deserialize, Serialize};
 use std::{
     any::Any,
+    borrow::Cow,
     fmt::{Debug, Display},
     marker::PhantomData,
     str::FromStr,
@@ -59,7 +62,7 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
     }
 
     /// Return bytes of the inner key
-    pub fn to_inner_bytes(&self) -> Vec<u8> {
+    pub fn to_inner_bytes(&'_ self) -> Cow<'_, [u8]> {
         self.0.to_bytes()
     }
 
@@ -75,8 +78,9 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::IOError("cannot read multikey prefix".to_owned()))?;
         if prefix != multicodec_prefix::MULTIKEY {
-            return Err(Error::InvalidKey(format!(
-                "not a multikey prefix: 0x{prefix:02x}",
+            return Err(Error::InvalidKey(concat_string!(
+                "not a multikey prefix: 0x",
+                &hex::encode(prefix.to_be_bytes())
             )));
         }
         // Key codec
@@ -99,12 +103,10 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
         if key_codec == multicodec_prefix::CUSTOM && attributes.get_algorithm_name()?.is_none() {
             return Err(Error::InvalidKey("no algorithm name".to_string()));
         }
-        let key_data = if let Some(v) = attributes.get_key_data() {
-            v.clone()
-        } else {
+        let Some(key_data) = attributes.get_key_data() else {
             return Err(Error::InvalidKey("no key data".to_owned()));
         };
-        let key = KF::public_from_bytes(key_codec, &key_data, &attributes)?;
+        let key = KF::public_from_bytes(key_codec, key_data, &attributes)?;
         Ok(Self::from_key_attributes(key, attributes, hrp))
     }
 }
@@ -126,8 +128,10 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
         self.0.algorithm_name()
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
+        let key_data = self.0.to_bytes();
+        // approx.: 4 u64 + key size + algorithm_name + attributes size
+        let mut buf = Vec::with_capacity(10 * 4 + key_data.len() + 20 + 20);
         let key_codec = self.0.codec();
 
         // Multikey prefix
@@ -146,14 +150,14 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
         }
         // Key attributes
         let mut attr = self.1.clone();
-        attr.set_key_data(Some(&self.0.to_bytes()));
+        attr.set_key_data(Some(&key_data));
         // custom algorithm name
         if key_codec == multicodec_prefix::CUSTOM {
             attr.set_algorithm_name(Some(self.algorithm_name()));
         }
         attr.to_writer(&mut buf).expect("unchecked write");
 
-        buf
+        Cow::Owned(buf)
     }
 
     fn get_ciphertext(&self, nonce: Option<&[u8]>) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -172,8 +176,9 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::IOError("cannot read signature prefix".to_owned()))?;
         if prefix != multicodec_prefix::MULTISIG {
-            return Err(Error::InvalidSignature(format!(
-                "invalid signature prefix 0x{prefix:02x}",
+            return Err(Error::InvalidSignature(concat_string!(
+                "invalid signature prefix 0x",
+                &hex::encode(prefix.to_be_bytes())
             )));
         }
         // signature codec
@@ -181,8 +186,9 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::IOError("cannot read signature codec".to_owned()))?;
         if signature_codec != self.0.signature_codec() {
-            return Err(Error::InvalidSignature(format!(
-                "invalid signature codec 0x{signature_codec:02x}",
+            return Err(Error::InvalidSignature(concat_string!(
+                "invalid signature codec 0x",
+                &hex::encode(signature_codec.to_be_bytes())
             )));
         }
         // An empty message
@@ -196,8 +202,9 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
         let attributes = SignatureAttributes::from_reader(&mut signature)?;
         if let Some(algorithm_name) = attributes.get_algorithm_name()? {
             if algorithm_name != self.algorithm_name() {
-                return Err(Error::InvalidSignature(format!(
-                    "invalid signature algorithm {algorithm_name}"
+                return Err(Error::InvalidSignature(concat_string!(
+                    "invalid signature algorithm ",
+                    algorithm_name
                 )));
             }
         } else if signature_codec == multicodec_prefix::CUSTOM {
@@ -211,18 +218,16 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
 
         if self.0.signature_nonce_size() > 0 {
             // the algorithm signature has a nonce
-            self.0
-                .verify(data, &RawSignature::from(signature_data.as_slice()))?;
+            self.0.verify(data, &RawSignature::from(signature_data))?;
         } else if let Some(nonce) = attributes.get_nonce() {
             // append the nonce to data
             self.0.verify(
-                &[data, nonce].concat(),
-                &RawSignature::from(signature_data.as_slice()),
+                &concat_vec!(data, nonce),
+                &RawSignature::from(signature_data),
             )?;
         } else {
             // no nonce
-            self.0
-                .verify(data, &RawSignature::from(signature_data.as_slice()))?;
+            self.0.verify(data, &RawSignature::from(signature_data))?;
         }
 
         Ok(())
@@ -266,8 +271,13 @@ impl<KF: KeyFactory> TryFrom<&[u8]> for MultikeyPublicKey<KF> {
 impl<KF: KeyFactory> TryFrom<Box<dyn PublicKeyTrait>> for MultikeyPublicKey<KF> {
     type Error = Error;
     fn try_from(key: Box<dyn PublicKeyTrait>) -> Result<Self> {
-        let Some(k) = key.as_any().downcast_ref::<MultikeyPublicKey<KF>>() else {
-            return Err(Error::InvalidKey("not a multikey".to_string()));
+        let Some(k) = key.as_any().downcast_ref::<Self>() else {
+            // Not a multikey public key.
+            return Ok(Self::from_key_attributes(
+                key,
+                KeyAttributes::default(),
+                None,
+            ));
         };
         Ok(k.clone())
     }

@@ -8,6 +8,8 @@ use crate::{
         write_varint_u64, write_varint_usize,
     },
 };
+use concat_string::concat_string;
+use mysteryn_core::concat_vec;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display},
@@ -87,7 +89,7 @@ impl Did {
         else {
             return String::new();
         };
-        method_name.to_string()
+        method_name.to_owned()
     }
 
     /// DID method specific id:
@@ -135,7 +137,7 @@ impl Did {
         let url = std::str::from_utf8(&url_bytes)
             .map_err(|e| Error::EncodingError(e.to_string()))?
             .to_owned();
-        Ok(url.to_string())
+        Ok(url)
     }
 
     /// DID codec
@@ -165,7 +167,7 @@ impl Did {
         // url-varbytes
         if codec == multicodec_prefix::CUSTOM {
             let url = if let Some(algorithm_name) = algorithm_name {
-                "?alg=".to_string() + &urlencoding::encode(algorithm_name)
+                concat_string!("?alg=", &urlencoding::encode(algorithm_name))
             } else {
                 String::new()
             };
@@ -201,12 +203,12 @@ impl Did {
         let hrp = id.hrp();
         let method_name = if method_name.is_empty() {
             if hrp.is_empty() {
-                "pkh".to_string()
+                "pkh".to_owned()
             } else {
-                "pkh:".to_string() + hrp
+                concat_string!("pkh:", hrp)
             }
         } else {
-            "pkh:".to_string() + method_name
+            concat_string!("pkh:", method_name)
         };
         // method-name
         write_varbytes(method_name.as_bytes(), &mut buf)
@@ -284,9 +286,9 @@ impl Did {
                 let Ok(hrp_bytes) = read_varbytes(&mut key_buf) else {
                     return String::new();
                 };
-                hrp = std::str::from_utf8(&hrp_bytes)
+                std::str::from_utf8(&hrp_bytes)
                     .unwrap_or_default()
-                    .to_string();
+                    .clone_into(&mut hrp);
             }
             return hrp;
         }
@@ -300,9 +302,9 @@ impl Did {
                 let Ok(hrp_bytes) = read_varbytes(&mut id_buf) else {
                     return String::new();
                 };
-                hrp = std::str::from_utf8(&hrp_bytes)
+                std::str::from_utf8(&hrp_bytes)
                     .unwrap_or_default()
-                    .to_string();
+                    .clone_into(&mut hrp);
             }
             return hrp;
         }
@@ -328,7 +330,7 @@ impl Did {
         if codec == multicodec_prefix::RAW {
             let id_str = std::str::from_utf8(&method_specific_id)
                 .map_err(|e| Error::EncodingError(e.to_string()))?;
-            return Ok(DID_PREFIX.to_string() + method_name + ":" + id_str + url);
+            return Ok(concat_string!(DID_PREFIX, method_name, ":", id_str, url));
         }
 
         if method_name == "key" || method_name.starts_with("key:") {
@@ -344,29 +346,28 @@ impl Did {
                 // HRP
                 let hrp_bytes =
                     read_varbytes(&mut key_buf).map_err(|e| Error::IOError(e.to_string()))?;
-                hrp = std::str::from_utf8(&hrp_bytes)
+                std::str::from_utf8(&hrp_bytes)
                     .map_err(|e| Error::IOError(e.to_string()))?
-                    .to_string();
+                    .clone_into(&mut hrp);
             } else {
                 write_varint_u64(codec, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
             }
-            let key = [buf, method_specific_id].concat();
+            let key = &concat_vec!(buf, method_specific_id);
 
             if *encoding == DidEncoding::Base32precheck {
-                return Ok([
+                return Ok(concat_string!(
                     DID_PREFIX,
                     method_name,
                     ":",
-                    &base32precheck::encode(&hrp, &key),
-                    url,
-                ]
-                .concat());
+                    &base32precheck::encode(&hrp, key),
+                    url
+                ));
             }
             return Ok([
                 DID_PREFIX,
                 method_name,
                 ":",
-                &multibase::to_base58(&key),
+                &multibase::to_base58(key),
                 url,
             ]
             .concat());
@@ -377,7 +378,7 @@ impl Did {
                 // identity
                 let id = Identity::try_from(method_specific_id.as_slice())
                     .map_err(|e| Error::IOError(e.to_string()))?;
-                (id.hrp().to_string(), id.hash().bytes().to_vec())
+                (id.hrp().to_owned(), id.hash().bytes().to_vec())
             } else {
                 // some hash
                 let hash = Hash::try_from(
@@ -412,7 +413,7 @@ impl Did {
 
         let id_str = std::str::from_utf8(&method_specific_id)
             .map_err(|e| Error::EncodingError(e.to_string()))?;
-        Ok(DID_PREFIX.to_string() + method_name + ":" + id_str + url)
+        Ok(concat_string!(DID_PREFIX, method_name, ":", id_str, url))
     }
 
     /// Encode the Did to a public key string
@@ -444,9 +445,9 @@ impl Did {
                 // HRP
                 let hrp_bytes =
                     read_varbytes(&mut key_buf).map_err(|e| Error::IOError(e.to_string()))?;
-                hrp = std::str::from_utf8(&hrp_bytes)
+                std::str::from_utf8(&hrp_bytes)
                     .map_err(|e| Error::IOError(e.to_string()))?
-                    .to_string();
+                    .clone_into(&mut hrp);
             }
 
             if !hrp.is_empty() {
@@ -465,9 +466,9 @@ impl Did {
     ) -> Result<Vec<VerificationMethod>> {
         let key = self.get_public_key_string()?;
         Ok(vec![VerificationMethod {
-            id: "#key-1".to_string(),
+            id: "#key-1".to_owned(),
             key_type: "publicKeyMultibase".into(),
-            controller: controller.to_string(),
+            controller: controller.to_owned(),
             public_key: Some(KeyFormat::Multibase(key)),
             private_key: secret_key.map(KeyFormat::Multibase),
         }])
@@ -480,13 +481,13 @@ impl Did {
     ) -> Result<Vec<VerificationMethod>> {
         let Some(public_key) = public_key else {
             return Err(Error::ValidationError(
-                "Public key was not provided".to_string(),
+                "Public key was not provided".to_owned(),
             ));
         };
         Ok(vec![VerificationMethod {
-            id: "#key-1".to_string(),
+            id: "#key-1".to_owned(),
             key_type: "publicKeyMultibase".into(),
-            controller: controller.to_string(),
+            controller: controller.to_owned(),
             public_key: Some(KeyFormat::Multibase(public_key)),
             private_key: secret_key.map(KeyFormat::Multibase),
         }])
@@ -505,14 +506,14 @@ impl Did {
                 .iter()
                 .map(|x| {
                     let Some((_, id)) = x.id.split_once('#') else {
-                        return x.id.to_string();
+                        return x.id.clone();
                     };
-                    "#".to_string() + id
+                    concat_string!("#", id)
                 })
                 .collect();
             Ok(Document {
-                context: "https://www.w3.org/ns/did/v1".to_string(),
-                id: controller.to_string(),
+                context: "https://www.w3.org/ns/did/v1".to_owned(),
+                id: controller,
                 key_agreement: None,
                 authentication: Some(vm_ids.clone()),
                 assertion_method: Some(vm_ids.clone()),
@@ -526,14 +527,14 @@ impl Did {
                 .iter()
                 .map(|x| {
                     let Some((_, id)) = x.id.split_once('#') else {
-                        return x.id.to_string();
+                        return x.id.clone();
                     };
-                    "#".to_string() + id
+                    concat_string!("#", id)
                 })
                 .collect();
             Ok(Document {
-                context: "https://www.w3.org/ns/did/v1".to_string(),
-                id: controller.to_string(),
+                context: "https://www.w3.org/ns/did/v1".to_owned(),
+                id: controller,
                 key_agreement: None,
                 authentication: Some(vm_ids.clone()),
                 assertion_method: Some(vm_ids.clone()),
@@ -542,8 +543,10 @@ impl Did {
                 verification_method: vm.clone(),
             })
         } else {
-            Err(Error::EncodingError(format!(
-                "method {method} is not supported"
+            Err(Error::EncodingError(concat_string!(
+                "method ",
+                method,
+                " is not supported"
             )))
         }
     }
@@ -560,7 +563,7 @@ impl Display for Did {
                 &DidEncoding::Base32precheck
             }) {
                 Ok(did_str) => did_str,
-                Err(e) => format!("<{e}>"),
+                Err(e) => concat_string!("<", e.to_string(), ">"),
             }
         )
     }
@@ -616,15 +619,15 @@ impl FromStr for Did {
 
     fn from_str(s: &str) -> Result<Self> {
         let Some(s) = s.strip_prefix(DID_PREFIX) else {
-            return Err(Error::EncodingError("not a did".to_string()));
+            return Err(Error::EncodingError("not a did".to_owned()));
         };
         let Some((method_name1, tail)) = s.split_once(':') else {
-            return Err(Error::EncodingError("invalid did".to_string()));
+            return Err(Error::EncodingError("invalid did".to_owned()));
         };
         let (method_name, tail) = if let Some((method_name2, tail)) = tail.split_once(':') {
-            (method_name1.to_string() + ":" + method_name2, tail)
+            (concat_string!(method_name1, ":", method_name2), tail)
         } else {
-            (method_name1.to_string(), tail)
+            (method_name1.to_owned(), tail)
         };
 
         // multidid-code
@@ -785,26 +788,27 @@ mod tests {
     type PublicKey = MultikeyPublicKey<DefaultKeyFactory>;
     type SecretKey = MultikeySecretKey<DefaultKeyFactory>;
 
-    const PUBLIC: &str = "z3TpRr8A231jLsD4SAQhZQdT48Wojcm6iTQVgupBauRuj";
-    const DID_STR: &str = "did:key:z6Mkgv5USNQTNZDoyhu8qyfQFj13x65b2eM59RQck69bpeh7";
+    const PUBLIC: &str = "z46jJo6Ah1hEcZHgHUNPedH9aU5YgcXfKarmuKtm5V6Ug";
+    const DID_STR: &str = "did:key:z6MkhYzMPLR8MEj5fnWz9wMVUNhaHepY2QugGsgqAAj6QKG4";
     const DID_URL_STR: &str =
-        "did:key:z3TpRr8A231jLsD4SAQhZQdT48Wojcm6iTQVgupBauRuj?example=123&test=true";
+        "did:key:z46jJo6Ah1hEcZHgHUNPedH9aU5YgcXfKarmuKtm5V6Ug?example=123&test=true";
     const MULTIKEY_PUBLIC: &str =
-        "pub_xahgjw6qgrwp6kyqgpyqaqm78e5js7aa7z9v6t50q8v8g0pyk3llvve9hks9kvqjdcejw350v44jfr6yjanv";
-    const MULTIKEY_DID_STR: &str = "did:key:pub_xahgjw6qgrwp6kyqgpyqaqm78e5js7aa7z9v6t50q8v8g0pyk3llvve9hks9kvqjdcejw350v44jfr6yjanv";
-    const FALCON_PUBLIC: &str = "z3ACLXHQc9ceiiH6ZFgZqbybR7vDLF8KudHv4LaTxp6zgwtTxF3pj8zyM3ipJHELodB8YUypw4dQGLziyGiukUNVWvm8fHcVmfBRev7qZwGZRzECsq5DkEqh9E4K42R6evUNAQ4U1tgn8SrccxESSbjNBNLkCcBUNdWurMw2RtBtSL4dNeqp6FoJnDHVmE8QsT6rb5gpnk163t8FxoeAGNMTMGtuaXvi3M1xUtQ3xB6hk7MFbCwYiNq7chFXz9oHVpHxmtM1hr3NpVh3gqLZWTeioUXSW9xVqFGNsQARrfr35wkxD6szZzbrTnM6jrxtoTh4gFZWTPh79USGHpaQmq5epyDMCbL3gRq8JhC1eTkxQW68CX1DdKSMogvdYyv1c9TvEhcsJ4AEgjxqh5YHB7L43v6xriogNbHazdZSvV8B3nFUt3uPfWRJgywoQUggykLMrWoWDpfXT9b1nCS8RisoPb91LkaTnfRAn9rYNves6n8AkTtP1qgs3bgTHW6A5x2T6qX87oaWL3SEdNxPY5qm17SCMSpEHpTccWPbYTM4WX1wdbwLrLgioEnV9i7aLKKsUjnCwtY2UrbEsn4sjbRtMSCoEYAepQX5pht6UwiWp41bzoTP75JshZ3vWwtZvWzanYNZafHLZLxNq397xf9CSrhmJurghuJXd3dDiFgwy3efpW8wDpih12oR7eRDQfFX5kj4SsfZfWR95FjU9RU5ZXPPwmZzNUAXjDx8ZwhYfHoa5yYFfVrhAXWUsDaPt1YgSPySCTBz6y2Gar2pvfHNHsNk2o5Kj8yhX7CxnohVs8RCgEV7PmWbYQvrbPGdhnF2moWatQAHNbe4jkXX8UUgvrrKhRq8nWMc8GHcDEBvf5iEG23N5dmKZ72sew7jPYSL6hAe47om3633JTmM5UG77KaVasEkcyX4JWhMtAiL2Qb3YhWCnAszHSo5p7Nf7U9FiVQ5RiWeEPmtd6FYzka7fEJsiUcwy67J35AAygD6AEhKTHtsfxJWGDtRrKyZJ8jhjzJx6H5jrm2pJLuRx1H7TvMYntYFvfieAfXPw5h8hxrzgpuSV2CkmWdiwWQEZfES8VKysn9GZAtdad4HcTZVCgVZTw8cX1qgo5e2GzVU7hNXLkbFH8c35XCqoHuUM4wSbP6RL4ihZWax76RWZWr8QLLeWpptCYkUCStDpYQ1YXQcPkS6dAJFBSXMqYkJyFPqy5E6iY";
-    const FALCON_DID_STR: &str = "did:key:z13ACLXHQc9ceiiH6ZFgZqbybR7vDLF8KudHv4LaTxp6zgwtTxF3pj8zyM3ipJHELodB8YUypw4dQGLziyGiukUNVWvm8fHcVmfBRev7qZwGZRzECsq5DkEqh9E4K42R6evUNAQ4U1tgn8SrccxESSbjNBNLkCcBUNdWurMw2RtBtSL4dNeqp6FoJnDHVmE8QsT6rb5gpnk163t8FxoeAGNMTMGtuaXvi3M1xUtQ3xB6hk7MFbCwYiNq7chFXz9oHVpHxmtM1hr3NpVh3gqLZWTeioUXSW9xVqFGNsQARrfr35wkxD6szZzbrTnM6jrxtoTh4gFZWTPh79USGHpaQmq5epyDMCbL3gRq8JhC1eTkxQW68CX1DdKSMogvdYyv1c9TvEhcsJ4AEgjxqh5YHB7L43v6xriogNbHazdZSvV8B3nFUt3uPfWRJgywoQUggykLMrWoWDpfXT9b1nCS8RisoPb91LkaTnfRAn9rYNves6n8AkTtP1qgs3bgTHW6A5x2T6qX87oaWL3SEdNxPY5qm17SCMSpEHpTccWPbYTM4WX1wdbwLrLgioEnV9i7aLKKsUjnCwtY2UrbEsn4sjbRtMSCoEYAepQX5pht6UwiWp41bzoTP75JshZ3vWwtZvWzanYNZafHLZLxNq397xf9CSrhmJurghuJXd3dDiFgwy3efpW8wDpih12oR7eRDQfFX5kj4SsfZfWR95FjU9RU5ZXPPwmZzNUAXjDx8ZwhYfHoa5yYFfVrhAXWUsDaPt1YgSPySCTBz6y2Gar2pvfHNHsNk2o5Kj8yhX7CxnohVs8RCgEV7PmWbYQvrbPGdhnF2moWatQAHNbe4jkXX8UUgvrrKhRq8nWMc8GHcDEBvf5iEG23N5dmKZ72sew7jPYSL6hAe47om3633JTmM5UG77KaVasEkcyX4JWhMtAiL2Qb3YhWCnAszHSo5p7Nf7U9FiVQ5RiWeEPmtd6FYzka7fEJsiUcwy67J35AAygD6AEhKTHtsfxJWGDtRrKyZJ8jhjzJx6H5jrm2pJLuRx1H7TvMYntYFvfieAfXPw5h8hxrzgpuSV2CkmWdiwWQEZfES8VKysn9GZAtdad4HcTZVCgVZTw8cX1qgo5e2GzVU7hNXLkbFH8c35XCqoHuUM4wSbP6RL4ihZWax76RWZWr8QLLeWpptCYkUCStDpYQ1YXQcPkS6dAJFBSXMqYkJyFPqy5E6iY?alg=Falcon-512";
-    const DID_PKH_STR: &str = "did:pkh:mys:zgW5zexksZRT95S3bjbnGvcT9qhGNFhoupaBnQoDWB5iFiK";
+        "pub_xahgjw6qgrwp6kyqgpyr6m6pzcm2apgpy9qn2w0dyaawq8nnmqy7w6pnl93nxx26ga8wvk7ng8k54etmr9";
+    const MULTIKEY_DID_STR: &str = "did:key:pub_xahgjw6qgrwp6kyqgpyr6m6pzcm2apgpy9qn2w0dyaawq8nnmqy7w6pnl93nxx26ga8wvk7ng8k54etmr9";
+    const FALCON_PUBLIC: &str = "z33F6fAkYB9t5RxszqufuwFtQeMC5ayfWWVvEP2cAYJvcCsDUqDNv3ZnebJRaH2Z6xKnzRV1Wepue6k5VzwmQJVi1rxXTG8MqQfevBxAUF4fy5GC9rzWXSSdYNbGPd94up5oixTgFKg9nGqLLjPB9iqzQB5PcKu4w5CfG2jTQSvbLaGD1GTjtQPxMzinodDnp3otvyxGbULkXRjVrXXnwZMNA5ZjgJQogitUdj8RzumQTMDGk3Syb9DnYsdDEGkHELvJj3cE3K1NkJtjJ8MVeexPN9wD1SLhydUw97mVmeGsS42fguk3nkTTUtppYvyjaB2kviBRbccZFJZPAqwKaX4BEp5obWoMg12c38h82sQbtHGZAoHjH47qjUuDe6gjHSzJqrH5ctQ6Ge9UW8bjWkzTxmLDk3xTv94n5GwJvsqxvuxQmyDai1oWDxMF3jwhYzseRbUyHxGNMboWEzWJ7L9uwJ2JFiCnZMH7ukA9tf6RBCL2STqytr4EXFryK9zYVedQhB6MqYNQec7TUPBwChEhe3XVDrUeTr88pMFnGcwXPJdXYadCwHjDXEEUBmFvb9WYyJcSurHq2QkrpPXvmSKUsk4idpwezrV8LRNSRL2sBb1kDkGtbaD9LBNiqRABPJnz4xycHxRbd62GUH54kX36LZ1FK4BZqk426y6WRxpm38udEXECQfv1FhM5DqFp6TjjYm2eSRsYeAqrAaozrobW8wrTywavVgDCrpgrXN2PFtu2jRNs78svih37f4MVUVpYCMu1BdZVJWTeg8w4xhNSBvRauyGcwAgCkuVG3svUnG3WmZEggVhnbuuLRPgv2i93kfhriCn8oUr4DMeigPetpuRmnbryVKbRzd3aAfandZjDA512hAN9MMCS8wD1PLDrv5mmAhMj1CizXm7QJXvek6NDCPfpCpnqFgbavo4EKf7aCURyuKgZRKPtZSe99RWkGv3tXeTTenEiv7sHNzt3j9Vg84CBcKickPD9zEPd6GkLHBgkRRgSi1NmT4yrsqpPkKbS7BFTuQ3PVSwq8mcXFuqRmZsCn1xVLTwYiXxQXf9bRvCbKzePC4ebCzvor2vbhCG8HujjfNfGCwgX7CgLKWbjDscxNsKxsgHVGK1ch5RyAi7qcakX46rJZjypH8cQL3YXznTvh7ynfV8BJcQ6wrTa6MJXbTKCZUaRDqQCxAo5aCD46ARnUhvZf8UWh1vKPbqSAf";
+    const FALCON_DID_STR: &str = "did:key:z133F6fAkYB9t5RxszqufuwFtQeMC5ayfWWVvEP2cAYJvcCsDUqDNv3ZnebJRaH2Z6xKnzRV1Wepue6k5VzwmQJVi1rxXTG8MqQfevBxAUF4fy5GC9rzWXSSdYNbGPd94up5oixTgFKg9nGqLLjPB9iqzQB5PcKu4w5CfG2jTQSvbLaGD1GTjtQPxMzinodDnp3otvyxGbULkXRjVrXXnwZMNA5ZjgJQogitUdj8RzumQTMDGk3Syb9DnYsdDEGkHELvJj3cE3K1NkJtjJ8MVeexPN9wD1SLhydUw97mVmeGsS42fguk3nkTTUtppYvyjaB2kviBRbccZFJZPAqwKaX4BEp5obWoMg12c38h82sQbtHGZAoHjH47qjUuDe6gjHSzJqrH5ctQ6Ge9UW8bjWkzTxmLDk3xTv94n5GwJvsqxvuxQmyDai1oWDxMF3jwhYzseRbUyHxGNMboWEzWJ7L9uwJ2JFiCnZMH7ukA9tf6RBCL2STqytr4EXFryK9zYVedQhB6MqYNQec7TUPBwChEhe3XVDrUeTr88pMFnGcwXPJdXYadCwHjDXEEUBmFvb9WYyJcSurHq2QkrpPXvmSKUsk4idpwezrV8LRNSRL2sBb1kDkGtbaD9LBNiqRABPJnz4xycHxRbd62GUH54kX36LZ1FK4BZqk426y6WRxpm38udEXECQfv1FhM5DqFp6TjjYm2eSRsYeAqrAaozrobW8wrTywavVgDCrpgrXN2PFtu2jRNs78svih37f4MVUVpYCMu1BdZVJWTeg8w4xhNSBvRauyGcwAgCkuVG3svUnG3WmZEggVhnbuuLRPgv2i93kfhriCn8oUr4DMeigPetpuRmnbryVKbRzd3aAfandZjDA512hAN9MMCS8wD1PLDrv5mmAhMj1CizXm7QJXvek6NDCPfpCpnqFgbavo4EKf7aCURyuKgZRKPtZSe99RWkGv3tXeTTenEiv7sHNzt3j9Vg84CBcKickPD9zEPd6GkLHBgkRRgSi1NmT4yrsqpPkKbS7BFTuQ3PVSwq8mcXFuqRmZsCn1xVLTwYiXxQXf9bRvCbKzePC4ebCzvor2vbhCG8HujjfNfGCwgX7CgLKWbjDscxNsKxsgHVGK1ch5RyAi7qcakX46rJZjypH8cQL3YXznTvh7ynfV8BJcQ6wrTa6MJXbTKCZUaRDqQCxAo5aCD46ARnUhvZf8UWh1vKPbqSAf?alg=Falcon-512";
+    const DID_PKH_STR: &str = "did:pkh:mys:zgW2mgt3C1zSi9KYKGjm4WMXfHXjkmcHnqH3avFmCCFKNM2";
     const DID_PKH_HRP_STR: &str =
-        "did:pkh:mys:id_xarcs8hwed8f3rp72wkhj25m3arggc39ekreswq94d0yqhamnwyyu2jlpwtsem27fk8g3s";
+        "did:pkh:mys:id_xarcsyh4durd0lefdg43d77fjsr755vpfn2h433tdf9ykxz8l8a3sz4nwrky72wzezlq";
     const DID_PKH_MULTIKEY_STR: &str =
-        "did:pkh:mys:id_xarcs97jsku8m57ac2zleh8ehrtj9yv0zsdt8wsepx7eda6qasrx4m69wzvy6gfewfr08s";
+        "did:pkh:mys:id_xarcsvmunqp4ezcvnsgrzdfe0knm36j0rerpcylrj0yaesza8dpgaltlx0wkgwd4vets";
 
+    // Generate the above keys.
     #[test]
     #[ignore]
     fn generate_keys() -> Result<()> {
         let secret1 = Ed25519SecretKey::new();
-        let public1 = PublicKey::try_from(secret1.public_key()).unwrap();
+        let public1 = secret1.public_key();
         println!("const PUBLIC: &str = \"{public1}\";");
         println!("const DID_STR: &str = \"{}\";", public1.get_did()?);
         println!("const DID_URL_STR: &str = \"did:key:{public1}?example=123&test=true\";");
@@ -815,11 +819,11 @@ mod tests {
             Some("secret"),
             Some("pub"),
         )?;
-        let public2 = PublicKey::try_from(secret2.public_key()).unwrap();
+        let public2 = secret2.public_key();
         println!("const MULTIKEY_PUBLIC: &str = \"{public2}\";");
         println!("const MULTIKEY_DID_STR: &str = \"{}\";", public2.get_did()?);
         let secret3 = Falcon512SecretKey::new();
-        let public3 = PublicKey::try_from(secret3.public_key()).unwrap();
+        let public3 = secret3.public_key();
         println!("const FALCON_PUBLIC: &str = \"{public3}\";");
         println!("const FALCON_DID_STR: &str = \"{}\";", public3.get_did()?);
         let id1 = Identity::from_public_key(&public1, "");
@@ -861,7 +865,7 @@ mod tests {
     #[test]
     fn can_create_did_pkh() {
         let key = Ed25519PublicKey::from_str(PUBLIC).expect("cannot decode key string");
-        let did = key.get_did_pkh("mys", None).expect("cannot get did");
+        let did = key.get_did_pkh("mys", "").expect("cannot get did");
         assert_eq!(&did.0[0..2], super::DID_IPLD_PREFIX);
         assert_eq!(did.to_string(), DID_PKH_STR);
     }
@@ -927,8 +931,8 @@ mod tests {
         assert_eq!(
             method_data,
             vec![
-                36, 150, 26, 51, 101, 7, 187, 221, 127, 232, 22, 45, 126, 95, 207, 37, 210, 134,
-                116, 110, 151, 249, 19, 163, 73, 135, 107, 21, 83, 26, 1, 130
+                46, 10, 205, 32, 181, 195, 157, 135, 240, 140, 38, 24, 154, 11, 236, 141, 238, 180,
+                224, 137, 46, 39, 84, 226, 125, 36, 39, 55, 116, 130, 67, 217
             ]
         );
 
@@ -950,7 +954,7 @@ mod tests {
         assert_eq!(
             did.encode(&DidEncoding::Base32precheck)
                 .expect("cannot encode"),
-            "did:key:xa0ps76qfyjcdrxeg8h0whl6qk94l9lne962r8gm5hlyf6xjv8dv24xxspsfqtq3uq4gqftmc"
+            "did:key:xa0ps76qfwptxjpdwrnkrlprpxrzdqhmyda66wpzfwya2wylfyyumhfqjrm9f07wl6eyj77"
         );
 
         let did2 = Did::from_str(DID_STR).expect("cannot get did");
@@ -962,7 +966,7 @@ mod tests {
         assert_eq!(
             did2.encode(&DidEncoding::Base32precheck)
                 .expect("cannot encode"),
-            "did:key:xa0ps76qfyjcdrxeg8h0whl6qk94l9lne962r8gm5hlyf6xjv8dv24xxspsfqtq3uq4gqftmc"
+            "did:key:xa0ps76qfwptxjpdwrnkrlprpxrzdqhmyda66wpzfwya2wylfyyumhfqjrm9f07wl6eyj77"
         );
     }
 
@@ -993,7 +997,7 @@ mod tests {
     #[test]
     fn can_create_did_pkh_from_multikey() {
         let key = PublicKey::from_str(MULTIKEY_PUBLIC).expect("cannot decode key string");
-        let did = key.get_did_pkh("mys", Some("id")).expect("cannot get did");
+        let did = key.get_did_pkh("mys", "id").expect("cannot get did");
 
         assert_eq!(&did.0[0..2], super::DID_IPLD_PREFIX);
         assert_eq!(did.to_string(), DID_PKH_MULTIKEY_STR);

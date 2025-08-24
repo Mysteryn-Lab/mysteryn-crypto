@@ -1,13 +1,11 @@
-# Mysteryn-crypto
+# Mysteryn Crypto
 
-This crate provides a range of cryptographic functions, including support for digital signatures, public and private keys, identities, and hashes. It also includes functionalities for Decentralized Identifiers (DIDs) and encodings.
+This crate provides a range of cryptographic functions, including support for digital signatures, public and private keys, identities, and hashes. It also includes features for Decentralized Identifiers (DIDs) and various encoding schemes.
 
-Features:
+**Features:**
 
-- Implements Multikey cryptographic keys and Multisig digital signature codecs.
-
-- Can be used with Rust and Wasm targets, including Node.js and web browsers, to enable digital signature functionalities.
-
+- Implements **Multikey** cryptographic keys and **Multisig** digital signature codecs.
+- Compatible with **Rust** and **Wasm** targets, including **Node.js** and web browsers.
 - Allows the list of supported cryptographic algorithms to be customized or expanded with new custom algorithms.
 
 The following **Classic digital signature** algorithms are included:
@@ -15,11 +13,11 @@ The following **Classic digital signature** algorithms are included:
 | Algorithm                                                                                 | Bits of security | Public key bytes | Signature bytes | Signing time, µs | Verifying time, µs | Memory allocation, bytes |
 | ----------------------------------------------------------------------------------------- |:----------------:| ----------------:| ---------------:| ----------------:| ------------------:| ------------------------:|
 | [Ed25519](https://datatracker.ietf.org/doc/html/rfc8032)                                  | 128              | 32               | 64              | 28               | 2,555              | 64                       |
-| **[Ed448](https://datatracker.ietf.org/doc/html/rfc8032)**                                | **224**          | 57               | 114             | 16,060           | 16,540             | 2,757                    |
+| [Ed448](https://datatracker.ietf.org/doc/html/rfc8032)                                    | 224              | 57               | 114             | 16,060           | 16,540             | 2,757                    |
 | **Secp256k1**                                                                             | **256**          | 33               | 64              | 123              | 165                | 64                       |
-| [P256](https://neuromancer.sk/std/nist/P-256)                                             | 128              | 33               | 90*             | 577              | 673                | 128                      |
-| [P384](https://neuromancer.sk/std/nist/P-384)                                             | 192              | 49               | 133*            | 1,113            | 1,554              | 192                      |
-| **[P521](https://neuromancer.sk/std/nist/P-521)**                                         | **256**          | 66               | 182*            | 1,543            | 2,015              | 264                      |
+| [P256](https://neuromancer.sk/std/nist/P-256)                                             | 128              | 33               | 90\*            | 577              | 673                | 128                      |
+| [P384](https://neuromancer.sk/std/nist/P-384)                                             | 192              | 49               | 133\*           | 1,113            | 1,554              | 192                      |
+| **[P521](https://neuromancer.sk/std/nist/P-521)**                                         | **256**          | 66               | 182\*           | 1,543            | 2,015              | 264                      |
 | [BLS12-381G1](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-bls-signature-00)     | 128              | 96               | 48              | 1,513            | 4,967              | 48                       |
 | [~~BLS12-381G2~~](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-bls-signature-00) | 128              | 48               | 96              |                  |                    |                          |
 | RSA 3072                                                                                  | 128              | 422              | 384             | 9,388            | 556                | 24,950                   |
@@ -34,7 +32,7 @@ The following **Post-quantum digital signature** algorithms are included:
 | ------------------------------------------------------------------------------- |:--------------:|:----------------:| ----------------:| ---------------:| ----------------:| ------------------:| ------------------------:|
 | [Falcon512](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)      | 1              | 108              | 897              | 666             | 1,841            | 100                | 157,600                  |
 | **[Falcon1024](https://openquantumsafe.org/liboqs/algorithms/sig/falcon.html)** | **5**          | 252              | 1,793            | 1,280           | 3,068            | 215                | 315,300                  |
-| [ML-DSA-44](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)      | 2              | 128*             | 1,312            | 2,420           | 712              | 187                | 2,420                    |
+| [ML-DSA-44](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)      | 2              | 128\*            | 1,312            | 2,420           | 712              | 187                | 2,420                    |
 | [ML-DSA-65](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)      | 3              | 192              | 1,952            | 3,309           | 1,318            | 291                | 3,309                    |
 | **[ML-DSA-87](https://openquantumsafe.org/liboqs/algorithms/sig/ml-dsa.html)**  | **5**          | 256              | 2,592            | 4,627           | 1,469            | 477                | 4,627                    |
 | MLKEM512                                                                        | 1              | 128              | 800              |                 | 247              | 2,987              | 3,239                    |
@@ -42,6 +40,12 @@ The following **Post-quantum digital signature** algorithms are included:
 | SLH-DSA-shake-128f                                                              | 1              | 128              | 32               | 17,088          | 198,000          | 12,590             | 17,088                   |
 | ~~SLH-DSA-shake-192f~~                                                          | 3              | 192              | 48               | 35,664          |                  |                    |                          |
 | ~~SLH-DSA-shake-256f~~                                                          | 5              | 256              | 64               | 49,856          |                  |                    |                          |
+
+**Note:**
+
+-   Algorithms in **bold** are recommended for their high security and performance.
+-   Algorithms with a ~~strikethrough~~ are not yet implemented.
+-   \* The signature size is not fixed.
 
 **Custom digital signature** algorithms can be added by implementing `SecretKeyTrait`, `PublicKeyTrait` and `SignatureTrait`, and including them as a custom key variant. See [`./examples/custom-keys.rs`](./examples/custom-keys.rs) for a demo.
 
@@ -175,16 +179,16 @@ console.log("Successfully signed and verified data.")
 
 ## Specification
 
-### Unsigned varint
+### Unsigned Varint
 
-This is the encoding of integer numbers. Also known as `varuint`.
+This is the encoding scheme for integer numbers, also known as `varuint`.
 
-The encoding is:
+The encoding rules are as follows:
 
-- unsigned integers are serialized 7 bits at a time, starting with the least significant bits
-- the most significant bit (msb) in each output byte indicates if there is a continuation byte (msb = 1)
-- there are no signed integers
-- integers are minimally encoded
+- Unsigned integers are serialized 7 bits at a time, starting with the least significant bits.
+- The most significant bit (MSB) in each output byte indicates if there is a continuation byte (MSB = 1).
+- There are no signed integers.
+- Integers are minimally encoded.
 
 See the [unsigned-varint specification](https://github.com/multiformats/unsigned-varint) for more details.
 
@@ -201,7 +205,7 @@ Examples:
 
 ### Varbytes
 
-This is the varuint length prefixed bytes.
+This is the varuint length-prefixed bytes.
 
 ```text
 <length-varuint><bytes>
@@ -209,9 +213,8 @@ This is the varuint length prefixed bytes.
 
 where
 
-- `length-varuint` - length of bytes encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint)
-
-- `bytes` - bytes.
+- `length-varuint` - length of bytes encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint).
+- `bytes` - raw bytes.
 
 ```text
 <varbytes> ::= <varuint> N(OCTET)
@@ -223,7 +226,7 @@ where
 
 ### Multikey
 
-This is a binary format of encoding secret and public keys.
+This is a binary format for encoding secret and public keys.
 
 ```text
 <multikey-code><codec-code><hrp-varbytes><attributes>
@@ -231,12 +234,9 @@ This is a binary format of encoding secret and public keys.
 
 where
 
-- `multikey-code` - the value `0x123a` encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint) (`0xba24`),
-
-- `codec-code` - a varuint encoded multicode for the key algorithm, as specified in the [multicodec table](https://github.com/multiformats/multicodec/blob/master/table.csv); custom algorithms have this value as zero (`0`),
-
-- `hrp-varbytes` - varbytes of the *UTF-8* encoded HRP (Human Readable Prefix), can be empty (zero size),
-
+- `multikey-code` - the value `0x123a` encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint) (`0xba24`).
+- `codec-code` - a varuint-encoded multicode for the key algorithm, as specified in the [multicodec table](https://github.com/multiformats/multicodec/blob/master/table.csv). Custom algorithms have this value as zero (`0`).
+- `hrp-varbytes` - varbytes of the *UTF-8* encoded HRP (Human-Readable Prefix), which can be empty (zero size).
 - `attributes` - key attributes encoding.
 
 ```text
@@ -272,41 +272,41 @@ v                  v
 
 Key attributes:
 
-**KeyIsEncryptied (0x00)** : The value is a single boolean byte flag; true if the key data is encrypted.
+**KeyIsEncrypted (0x00)**: A boolean flag indicating if the key data is encrypted.
 
-**KeyData (0x01)** : The value is the key data.
+**KeyData (0x01)**: The key data.
 
-**CipherCodec (0x02)** : The codec sigil specifying the encryption cipher used to encrypt the key data.
+**CipherCodec (0x02)**: The codec sigil specifying the encryption cipher used to encrypt the key data.
 
-**CipherKeyLen (0x03)** : The number of octets in the key encryption key.
+**CipherKeyLen (0x03)**: The number of octets in the key encryption key.
 
-**CipherNonce (0x04)** : The nonce value for the key encryption cipher.
+**CipherNonce (0x04)**: The nonce value for the key encryption cipher.
 
-**KdfCodec (0x05)** : The codec sigil specifying the key encryption key derivation function.
+**KdfCodec (0x05)**: The codec sigil specifying the key encryption key derivation function.
 
-**KdfSalt (0x06)** : The salt value used in the key encryption key derivation function.
+**KdfSalt (0x06)**: The salt value used in the key encryption key derivation function.
 
-**KdfRounds (0x07)** : The number of rounds used in the key encryption key derivation function.
+**KdfRounds (0x07)**: The number of rounds used in the key encryption key derivation function.
 
-**Threshold (0x08)** : The number of threshold signature key shares needed to recreate the key.
+**Threshold (0x08)**: The number of threshold signature key shares needed to recreate the key.
 
-**Limit (0x09)** : The total number of shares in the split threshold singature key.
+**Limit (0x09)**: The total number of shares in the split threshold signature key.
 
-**ShareIdentifier (0x0a)** : The identifer for a given threshold key share.
+**ShareIdentifier (0x0a)**: The identifier for a given threshold key share.
 
-**ThresholdData (0x0b)** : Threshold signing codec-specific data. This is typically use to store the accumulated key shares while gathring enough shares to recreate the key.
+**ThresholdData (0x0b)**: Threshold signing codec-specific data. This is typically used to store the accumulated key shares while gathering enough shares to recreate the key.
 
-**AlgorithmName (0x0c)** : An arbitrary string name for the algorithm. This is optional and is intended to support arbitrary and/or non-standard key types. Used for the custom codec.
+**AlgorithmName (0x0c)**: An arbitrary string name for the algorithm. This is optional and is intended to support arbitrary and/or non-standard key types. Used for the custom codec.
 
-**KeyType (0x0d)** : An arbitrary numeric key type attribute. This is optional and is intended to support arbitrary and/or non-standard key types. For the custom codec `0` or not set means public, `1` is secret.
+**KeyType (0x0d)**: An arbitrary numeric key type attribute. This is optional and is intended to support arbitrary and/or non-standard key types. For the custom codec, `0` or not set means public, and `1` means secret.
 
-**PublicHrp (0x0e)** : Public key human-readable prefix. Optional, and is used with a secret key only, to set the related public key prefix.
+**PublicHrp (0x0e)**: The public key's human-readable prefix. This is optional and is used with a secret key only to set the related public key prefix.
 
 See the [Multikey Specification](https://github.com/cryptidtech/provenance-specifications/blob/main/specifications/multikey.md) for more details.
 
 ### Multisig
 
-This is a binary format of encoding digital signatures.
+This is a binary format for encoding digital signatures.
 
 ```text
 <multisig-code><codec-code><message-varbytes><attributes>
@@ -314,12 +314,9 @@ This is a binary format of encoding digital signatures.
 
 where
 
-- `multisig-code` - the value `0x1239` encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint) (`0xb924`),
-
-- `codec-code` - a varuint encoded multicode of the signature algorithm (is the same as the code of public key), as specified in the [multicodec table](https://github.com/multiformats/multicodec/blob/master/table.csv); custom algorithms have this value as zero (`0`),
-
-- `message-varbytes` - the signed data if embedded, or empty with a zero length,
-
+- `multisig-code` - the value `0x1239` encoded as a [multiformats varint](https://github.com/multiformats/unsigned-varint) (`0xb924`).
+- `codec-code` - a varuint-encoded multicode of the signature algorithm (which is the same as the public key's code), as specified in the [multicodec table](https://github.com/multiformats/multicodec/blob/master/table.csv). Custom algorithms have this value as zero (`0`).
+- `message-varbytes` - the signed data if embedded, or empty with a zero length.
 - `attributes` - signature attributes encoding.
 
 ```text
@@ -354,25 +351,25 @@ sigil       signature message
 
 Signature attributes:
 
-**SigData (0x00)** : The signature data.
+**SigData (0x00)**: The signature data.
 
-**PayloadEncoding (0x01)** : The sigil specifying the encoding of the signed message.
+**PayloadEncoding (0x01)**: The sigil specifying the encoding of the signed message.
 
-**Scheme (0x02)** : The threshold signing scheme.
+**Scheme (0x02)**: The threshold signing scheme.
 
-**Threshold (0x03)** : The minumum number of signature shares required to reconstruct the signature.
+**Threshold (0x03)**: The minimum number of signature shares required to reconstruct the signature.
 
-**Limit (0x04)** : The total number of shares for a threshold signature.
+**Limit (0x04)**: The total number of shares for a threshold signature.
 
-**ShareIdentifier (0x05)** : The identifier for the signature share.
+**ShareIdentifier (0x05)**: The identifier for the signature share.
 
-**ThresholdData (0x06)** : Codec-speicific threshold signature data. This is typically used to accumulate threshold signature shares.
+**ThresholdData (0x06)**: Codec-specific threshold signature data, which is typically used to accumulate threshold signature shares.
 
-**AlgorithmName (0x07)** : An arbitrary string name for the algorithm. This is optional and is intended to support arbitrary and/or non-standard signature types. The signature algorithm name of the custom signature codec.
+**AlgorithmName (0x07)**: An arbitrary string name for the algorithm. This is optional and is intended to support arbitrary and/or non-standard signature types. It is the signature algorithm name of the custom signature codec.
 
-**Nonce (0x08)** : Nonce bytes, Optional. Used for codecs without signature randomization.
+**Nonce (0x08)**: Nonce bytes (optional). Used for codecs without signature randomization.
 
-**PublicKey (0x09)** : Public key raw bytes. Optional. Used for cases when a public key cannot be found in other way.
+**PublicKey (0x09)**: Raw public key bytes (optional). Used for cases when a public key cannot be found otherwise.
 
 See the [Multisig Specification](https://github.com/cryptidtech/provenance-specifications/blob/main/specifications/multisig.md) for more details.
 
@@ -394,12 +391,12 @@ where
 
 - `method-code` - a varint encoded multicode for the [DID Method identifier](https://www.w3.org/TR/did-core/#a-simple-example) or `0x55` for a general DID, or `0x00` for the Identity,
 
-- `method-specific-id-varbytes` - varbytes, unique method specific id, which may include colons (":"):
+- `method-specific-id-varbytes` - varbytes, a unique method-specific ID, which may include colons (`:`):
   
-   - "did:key": public key bytes,
-   - "did:pkh" with the Identity (0x00) codec: identity bytes
-   - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`,
-   - "did:*" with the Raw (0x55) codec: a string of method specific id for general DIDs;
+   - "did:key": public key bytes.
+   - "did:pkh" with the Identity (0x00) codec: identity bytes.
+   - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`.
+   - "did:*" with the Raw (0x55) codec: a string of the method-specific ID for general DIDs.
 
 - `url-varbytes` - varbytes, an *UTF-8* encoded string representing the [DID URL parameters](https://www.w3.org/TR/did-core/#did-url-syntax).
 
@@ -418,7 +415,7 @@ did:key:<Multibase(<method-code><public-key-bytes>)>[<url>]
 The DID string format for the `did:pkh`:
 
 ```txt
-did:pkh:[<network-id>:][<chain-id>:]<account-id>[<url>]`
+did:pkh:[<network-id>:][<chain-id>:]<account-id>[<url>]
 ```
 
 See [Decentralized Identifiers (DIDs) v1.0](https://www.w3.org/TR/did-core/) for a detailed description.
@@ -433,7 +430,7 @@ did:pkh:mys:mys_xarcs00f95fymgxx90fd9fkttm7zmj3zjrmr4expfrcp0f8ay6338ncmmzp7fy0r
 
 ### Multihash
 
-This is a binary format of encoding hashes.
+This is a binary format for encoding hashes.
 
 ```text
 <codec-code><hash-data-varbytes>
@@ -455,7 +452,7 @@ See the [multihash specification](https://github.com/multiformats/multihash) for
 
 ### Identity
 
-This is a format of identities and addresses. It includes the Human-readable prefix (HRP) and a hash.
+This is a format for identities and addresses, which includes a Human-Readable Prefix (HRP) and a hash.
 
 ```txt
 <hrp-varbytes><codec-code><hash-data-varbytes>
@@ -463,10 +460,8 @@ This is a format of identities and addresses. It includes the Human-readable pre
 
 where
 
-- `hrp-varbytes` - varbytes of the *UTF-8* encoded HRP (Human Readable Prefix), can be empty (zero size),
-
-- `codec-code` - a varint encoded multicode for the hash algorithm,
-
+- `hrp-varbytes` - varbytes of the *UTF-8* encoded HRP (Human-Readable Prefix), which can be empty (zero size).
+- `codec-code` - a varint-encoded multicode for the hash algorithm.
 - `hash-data-varbytes` - hash bytes.
 
 String format:
@@ -485,15 +480,12 @@ This is a variant of Base32 encoding with the human-readable prefix (`HRP`) and 
 
 where
 
-- `prefix-string` - an UTF8 encoded string prefix,
+- `prefix-string` - a UTF-8 encoded string prefix.
+- `_xa` - the underscore delimiter (`_`), the Multibase prefix (`x`), and the encoding version char (`a`)\*.
+- `data` - data bytes.
+- `checksum` - 8 or more bytes of a Reed-Solomon BCH checksum, which is calculated over the concatenation of the prefix and data (`checksum(<prefix-string>_xa<data>)`).
 
-- `_xa` - the underscore delimiter (`_`), the Multibase prefix (`x`) and the encoding version char (`a`)\*,
-
-- `data` - data bytes,
-
-- `checksum` - 8 or more bytes of Reed-Solomon BCH checksum. The checksum is calculated over the concatenation of the prefix and data (`checksum(<prefix-string>_xa<data>)`).
-
-\* The custom Multibase prefix (`x`) is followed by the encoding char(s). In case there will be many versions (more than a char can encode), to start a new list the Multibase prefix will become (`xx`).
+\* The custom Multibase prefix (`x`) is followed by the encoding character(s). If there are many versions (more than a single character can encode), the Multibase prefix will become (`xx`) to start a new list.
 
 Alternative variant in the Multibase format, without a HRP (uses the prefix `xa`):
 
@@ -513,7 +505,7 @@ Alphabet:
 qpzry9x8gf2tvdw0s3jn54khce6mua7l
 ```
 
-The format is inspired by the [Bech32](https://en.bitcoin.it/wiki/Bech32). The same alphabet is used, the delimiter is `_` as it is easier to see than `1`, the Reed-Solomon BCH checksum is used, and encoding version is included. Also this format is not limited by a data size.
+The format is inspired by [Bech32](https://en.bitcoin.it/wiki/Bech32). It uses the same alphabet, but the delimiter is `_` (as it is easier to see than `1`), and it includes a Reed-Solomon BCH checksum and an encoding version. Additionally, this format is not limited by data size.
 
 Examples:
 

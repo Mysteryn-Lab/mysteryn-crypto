@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //#![no_std]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![doc = include_str!("../README.md")]
@@ -25,9 +26,14 @@ pub mod key_traits;
 pub mod multicodec;
 pub mod prelude;
 pub mod result;
+#[macro_use]
+pub mod utils;
 
 pub use encoding::*;
 pub use signature::*;
+
+#[macro_use(concat_string)]
+extern crate concat_string;
 
 #[cfg(all(test, target_family = "wasm", target_os = "unknown"))]
 mod tests {

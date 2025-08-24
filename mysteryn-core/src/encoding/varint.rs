@@ -1,6 +1,7 @@
 use std::io::{Error, ErrorKind, Read, Result, Write};
 
-/// Read a varint `usize` from the provided reader. Returns `Ok(None)` on unexpected `EOF`.
+/// Read a varint `usize` from the provided reader.
+/// Returns `Ok(None)` on unexpected `EOF`.
 pub fn read_varint_usize<R: Read + Unpin>(reader: &mut R) -> Result<Option<usize>> {
     let mut b = unsigned_varint::encode::usize_buffer();
     for i in 0..b.len() {
@@ -18,24 +19,20 @@ pub fn read_varint_usize<R: Read + Unpin>(reader: &mut R) -> Result<Option<usize
     Err(Error::new(ErrorKind::InvalidInput, "varint overflow"))
 }
 
-/// Write a varint `usize` to the provided writer. Returns the number of bytes written.
+/// Write a varint `usize` to the provided writer.
+/// Returns the number of bytes written.
 pub fn write_varint_usize<W: Write + Unpin>(num: usize, writer: &mut W) -> Result<usize> {
     let mut buffer = unsigned_varint::encode::usize_buffer();
     let to_write = unsigned_varint::encode::usize(num, &mut buffer);
     writer.write_all(to_write)?;
-
     Ok(to_write.len())
 }
 
 /// Write a varint `usize` to the provided writer, expecting the writer cannot fail.
 /// Returns the number of bytes written.
 pub fn write_varint_usize_unsafe<W: Write + Unpin>(num: usize, writer: &mut W) -> usize {
-    let mut buffer = unsigned_varint::encode::usize_buffer();
-    let to_write = unsigned_varint::encode::usize(num, &mut buffer);
     #[expect(clippy::missing_panics_doc, reason = "writer is already checked")]
-    writer.write_all(to_write).unwrap();
-
-    to_write.len()
+    write_varint_usize(num, writer).unwrap()
 }
 
 /// Read a varint `u64` from the provided reader. Returns `Ok(None)` on unexpected `EOF`.
@@ -68,12 +65,8 @@ pub fn write_varint_u64<W: Write + Unpin>(num: u64, writer: &mut W) -> Result<us
 /// Write a varint `u64` to the provided writer, expecting the writer cannot fail.
 /// Returns the number of bytes written.
 pub fn write_varint_u64_unsafe<W: Write + Unpin>(num: u64, writer: &mut W) -> usize {
-    let mut buffer = unsigned_varint::encode::u64_buffer();
-    let to_write = unsigned_varint::encode::u64(num, &mut buffer);
     #[expect(clippy::missing_panics_doc, reason = "writer is already checked")]
-    writer.write_all(to_write).unwrap();
-
-    to_write.len()
+    write_varint_u64(num, writer).unwrap()
 }
 
 /// Encode an `usize` to varint.
@@ -105,6 +98,7 @@ pub fn decode_varint_u64(buf: &[u8]) -> Result<u64> {
 }
 
 /// Read `varbytes` from the provided reader.
+/// Prefer the non-allocating `decode_varbytes` when possible.
 pub fn read_varbytes<R: Read + Unpin>(reader: &mut R) -> Result<Vec<u8>> {
     let size = read_varint_usize(reader)
         .map_err(|e| Error::other(e.to_string()))?
@@ -120,31 +114,34 @@ pub fn read_varbytes<R: Read + Unpin>(reader: &mut R) -> Result<Vec<u8>> {
 /// Write `varbytes` to the provided writer. Returns the number of bytes written.
 pub fn write_varbytes<W: Write + Unpin>(bytes: &[u8], writer: &mut W) -> Result<usize> {
     let mut buffer = unsigned_varint::encode::usize_buffer();
-    let to_write = unsigned_varint::encode::usize(bytes.len(), &mut buffer);
-    writer.write_all(to_write)?;
-    let mut buffer = bytes;
-    std::io::copy(&mut buffer, writer)?;
-
-    Ok(to_write.len() + bytes.len())
+    let len_buf = unsigned_varint::encode::usize(bytes.len(), &mut buffer);
+    writer.write_all(len_buf)?;
+    // No intermediate copy - just write the payload directly.
+    writer.write_all(bytes)?;
+    Ok(len_buf.len() + bytes.len())
 }
 
 /// Write `varbytes` to the provided writer, expecting the writer cannot fail.
 /// Returns the number of bytes written.
 pub fn write_varbytes_unsafe<W: Write + Unpin>(bytes: &[u8], writer: &mut W) -> usize {
-    let mut buffer = unsigned_varint::encode::usize_buffer();
-    let to_write = unsigned_varint::encode::usize(bytes.len(), &mut buffer);
     #[expect(clippy::missing_panics_doc, reason = "writer is already checked")]
-    writer.write_all(to_write).unwrap();
-    let mut buffer = bytes;
-    #[expect(clippy::missing_panics_doc, reason = "writer is already checked")]
-    std::io::copy(&mut buffer, writer).unwrap();
-
-    to_write.len() + bytes.len()
+    write_varbytes(bytes, writer).unwrap()
 }
 
 /// Encode bytes to `varbytes`.
 pub fn encode_varbytes(bytes: &[u8]) -> Vec<u8> {
-    let mut buf = vec![];
-    write_varbytes_unsafe(bytes, &mut buf);
+    let mut buffer = unsigned_varint::encode::usize_buffer();
+    let len_buf = unsigned_varint::encode::usize(bytes.len(), &mut buffer);
+    let mut buf = Vec::with_capacity(len_buf.len() + bytes.len());
+    buf.extend(len_buf);
+    buf.extend(bytes);
     buf
+}
+
+/// Decode bytes from `varbytes`.
+/// Returns a tuple with the decoded bytes and the rest.
+pub fn decode_varbytes(varbytes: &[u8]) -> Result<(&[u8], &[u8])> {
+    let (len, bytes) = unsigned_varint::decode::usize(varbytes)
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "invalid varbytes"))?;
+    Ok((&bytes[..len], &bytes[len..]))
 }

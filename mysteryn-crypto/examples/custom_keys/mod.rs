@@ -1,3 +1,4 @@
+use concat_string::concat_string;
 /// Example implementation of custom key algorithms lists.
 use mysteryn_crypto::{
     attributes::{KeyAttributes, SignatureAttributes},
@@ -23,8 +24,10 @@ impl KeyFactory for CustomKeyFactory {
         match algorithm {
             multicodec_prefix::SECP256K1_SECRET => Ok(Box::new(Secp256k1SecretKey::new())),
             multicodec_prefix::BLS12381G1_SECRET => Ok(Box::new(Bls12381G1SecretKey::new())),
-            _ => Err(Error::ValidationError(format!(
-                "algorithm 0x{algorithm:02x} is not supported"
+            _ => Err(Error::ValidationError(concat_string!(
+                "algorithm 0x",
+                &hex::encode(algorithm.to_be_bytes()),
+                " is not supported"
             ))),
         }
     }
@@ -41,8 +44,10 @@ impl KeyFactory for CustomKeyFactory {
             multicodec_prefix::BLS12381G1_SECRET => {
                 Ok(Box::new(Bls12381G1SecretKey::try_from(bytes)?))
             }
-            _ => Err(Error::ValidationError(format!(
-                "algorithm 0x{algorithm:02x} is not supported"
+            _ => Err(Error::ValidationError(concat_string!(
+                "algorithm 0x",
+                &hex::encode(algorithm.to_be_bytes()),
+                " is not supported"
             ))),
         }
     }
@@ -55,8 +60,10 @@ impl KeyFactory for CustomKeyFactory {
         match algorithm {
             multicodec_prefix::SECP256K1 => Ok(Box::new(Secp256k1PublicKey::try_from(bytes)?)),
             multicodec_prefix::BLS12381G1 => Ok(Box::new(Bls12381G1PublicKey::try_from(bytes)?)),
-            _ => Err(Error::ValidationError(format!(
-                "algorithm 0x{algorithm:02x} is not supported"
+            _ => Err(Error::ValidationError(concat_string!(
+                "algorithm 0x",
+                &hex::encode(algorithm.to_be_bytes()),
+                " is not supported"
             ))),
         }
     }
@@ -69,8 +76,10 @@ impl KeyFactory for CustomKeyFactory {
         match algorithm {
             multicodec_prefix::SECP256K1 => Ok(Box::new(Secp256k1Signature::try_from(bytes)?)),
             multicodec_prefix::BLS12381G1 => Ok(Box::new(Bls12381G1Signature::try_from(bytes)?)),
-            _ => Err(Error::ValidationError(format!(
-                "algorithm 0x{algorithm:02x} is not supported"
+            _ => Err(Error::ValidationError(concat_string!(
+                "algorithm 0x",
+                &hex::encode(algorithm.to_be_bytes()),
+                " is not supported"
             ))),
         }
     }

@@ -8,6 +8,7 @@ use dyn_clone::{DynClone, clone_trait_object};
 use serde::{Deserialize, Serialize};
 use std::{
     any::Any,
+    borrow::Cow,
     fmt::{Debug, Display},
 };
 
@@ -46,10 +47,10 @@ pub trait SecretKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
     fn public_key(&self) -> Box<dyn PublicKeyTrait>;
 
     /// Get binary view of the key
-    fn to_bytes(&self) -> Vec<u8>;
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]>;
 
     /// Get a shared secret if algorithm supports it.
-    fn get_shared_secret(&self, ciphertext: Option<Vec<u8>>) -> Option<Vec<u8>>;
+    fn get_shared_secret(&self, ciphertext: Option<&[u8]>) -> Option<Vec<u8>>;
 
     /// Sign some data with this key. If algorithm supports nonce, it is automatically generated.
     fn sign(
@@ -63,7 +64,7 @@ pub trait SecretKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
     fn sign_exchange(
         &self,
         data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
+        other_public_key_raw_bytes: Option<&[u8]>,
         attributes: Option<&mut SignatureAttributes>,
     ) -> Result<RawSignature>;
 
@@ -72,7 +73,7 @@ pub trait SecretKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
     fn sign_deterministic(
         &self,
         data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
+        other_public_key_raw_bytes: Option<&[u8]>,
         attributes: Option<&mut SignatureAttributes>,
     ) -> Result<RawSignature>;
 
@@ -109,11 +110,11 @@ impl SecretKeyTrait for Box<dyn SecretKeyTrait> {
         self.as_ref().public_key()
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
         self.as_ref().to_bytes()
     }
 
-    fn get_shared_secret(&self, ciphertext: Option<Vec<u8>>) -> Option<Vec<u8>> {
+    fn get_shared_secret(&self, ciphertext: Option<&[u8]>) -> Option<Vec<u8>> {
         self.as_ref().get_shared_secret(ciphertext)
     }
 
@@ -128,7 +129,7 @@ impl SecretKeyTrait for Box<dyn SecretKeyTrait> {
     fn sign_exchange(
         &self,
         data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
+        other_public_key_raw_bytes: Option<&[u8]>,
         attributes: Option<&mut SignatureAttributes>,
     ) -> Result<RawSignature> {
         self.as_ref()
@@ -138,7 +139,7 @@ impl SecretKeyTrait for Box<dyn SecretKeyTrait> {
     fn sign_deterministic(
         &self,
         data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
+        other_public_key_raw_bytes: Option<&[u8]>,
         attributes: Option<&mut SignatureAttributes>,
     ) -> Result<RawSignature> {
         self.as_ref()
@@ -178,7 +179,7 @@ pub trait PublicKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
     fn algorithm_name(&self) -> &'static str;
 
     /// Get binary view of the key
-    fn to_bytes(&self) -> Vec<u8>;
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]>;
 
     /// Get ciphertext and shared secret, if algorithm supports it
     fn get_ciphertext(&self, nonce: Option<&[u8]>) -> Option<(Vec<u8>, Vec<u8>)>;
@@ -214,7 +215,7 @@ impl PublicKeyTrait for Box<dyn PublicKeyTrait> {
         self.as_ref().algorithm_name()
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
         self.as_ref().to_bytes()
     }
 
@@ -334,4 +335,211 @@ pub trait KeyFactory:
     ) -> Result<Box<dyn SignatureTrait>>;
     /// List supported algorithms. Returns a vector of `SupportedAlgorithm`.
     fn list_supported() -> Vec<SupportedAlgorithm>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::signature::RawSignature;
+    use std::fmt;
+
+    // --- Mocks ---
+
+    #[derive(Debug, Clone)]
+    struct MockSecretKey;
+
+    impl Display for MockSecretKey {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "MockSecretKey")
+        }
+    }
+
+    impl SecretKeyTrait for MockSecretKey {
+        fn codec(&self) -> u64 {
+            1
+        }
+        fn signature_codec(&self) -> u64 {
+            2
+        }
+        fn signature_nonce_size(&self) -> usize {
+            3
+        }
+        fn algorithm_name(&self) -> &'static str {
+            "mock"
+        }
+        fn public_key(&self) -> Box<dyn PublicKeyTrait> {
+            Box::new(MockPublicKey)
+        }
+        fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
+            Cow::Borrowed(&[4, 5, 6])
+        }
+        fn get_shared_secret(&self, _ciphertext: Option<&[u8]>) -> Option<Vec<u8>> {
+            Some(vec![7, 8, 9])
+        }
+        fn sign(
+            &self,
+            _data: &[u8],
+            _attributes: Option<&mut SignatureAttributes>,
+        ) -> Result<RawSignature> {
+            Ok(RawSignature::from(&[10, 11, 12][..]))
+        }
+        fn sign_exchange(
+            &self,
+            _data: &[u8],
+            _other_public_key_raw_bytes: Option<&[u8]>,
+            _attributes: Option<&mut SignatureAttributes>,
+        ) -> Result<RawSignature> {
+            Ok(RawSignature::from(&[10, 11, 12][..]))
+        }
+        fn sign_deterministic(
+            &self,
+            _data: &[u8],
+            _other_public_key_raw_bytes: Option<&[u8]>,
+            _attributes: Option<&mut SignatureAttributes>,
+        ) -> Result<RawSignature> {
+            Ok(RawSignature::from(&[10, 11, 12][..]))
+        }
+        fn verify(&self, _data: &[u8], _signature: &RawSignature) -> Result<()> {
+            Ok(())
+        }
+        fn signature(&self, signature: &RawSignature) -> Result<Box<dyn SignatureTrait>> {
+            Ok(Box::new(MockSignature(signature.clone())))
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct MockPublicKey;
+
+    impl Display for MockPublicKey {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "MockPublicKey")
+        }
+    }
+
+    impl PublicKeyTrait for MockPublicKey {
+        fn codec(&self) -> u64 {
+            10
+        }
+        fn signature_codec(&self) -> u64 {
+            11
+        }
+        fn signature_nonce_size(&self) -> usize {
+            12
+        }
+        fn algorithm_name(&self) -> &'static str {
+            "mock_pub"
+        }
+        fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
+            Cow::Borrowed(&[13, 14, 15])
+        }
+        fn get_ciphertext(&self, _nonce: Option<&[u8]>) -> Option<(Vec<u8>, Vec<u8>)> {
+            Some((vec![16], vec![17]))
+        }
+        fn can_verify(&self) -> bool {
+            true
+        }
+        fn verify(&self, _payload: &[u8], _signature: &RawSignature) -> Result<()> {
+            Ok(())
+        }
+        fn signature(&self, signature: &RawSignature) -> Result<Box<dyn SignatureTrait>> {
+            Ok(Box::new(MockSignature(signature.clone())))
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    #[derive(Debug, Clone)]
+    struct MockSignature(RawSignature);
+
+    impl Display for MockSignature {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "MockSignature")
+        }
+    }
+
+    impl SignatureTrait for MockSignature {
+        fn codec(&self) -> u64 {
+            20
+        }
+        fn signature_nonce_size(&self) -> usize {
+            21
+        }
+        fn algorithm_name(&self) -> &'static str {
+            "mock_sig"
+        }
+        fn as_bytes(&self) -> &[u8] {
+            self.0.as_slice()
+        }
+        fn raw(&self) -> &RawSignature {
+            &self.0
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+    }
+
+    // --- Tests ---
+
+    #[test]
+    fn test_boxed_secret_key_trait_delegation() {
+        let mock_key = MockSecretKey;
+        let boxed_key: Box<dyn SecretKeyTrait> = Box::new(mock_key.clone());
+
+        assert_eq!(boxed_key.codec(), mock_key.codec());
+        assert_eq!(boxed_key.signature_codec(), mock_key.signature_codec());
+        assert_eq!(
+            boxed_key.signature_nonce_size(),
+            mock_key.signature_nonce_size()
+        );
+        assert_eq!(boxed_key.algorithm_name(), mock_key.algorithm_name());
+        assert_eq!(boxed_key.to_bytes(), mock_key.to_bytes());
+        assert_eq!(
+            boxed_key.get_shared_secret(None),
+            mock_key.get_shared_secret(None)
+        );
+        assert!(boxed_key.sign(&[], None).is_ok());
+        assert!(boxed_key.verify(&[], &RawSignature::from(&[][..])).is_ok());
+        assert!(boxed_key.public_key().codec() == 10);
+    }
+
+    #[test]
+    fn test_boxed_public_key_trait_delegation() {
+        let mock_key = MockPublicKey;
+        let boxed_key: Box<dyn PublicKeyTrait> = Box::new(mock_key.clone());
+
+        assert_eq!(boxed_key.codec(), mock_key.codec());
+        assert_eq!(boxed_key.signature_codec(), mock_key.signature_codec());
+        assert_eq!(
+            boxed_key.signature_nonce_size(),
+            mock_key.signature_nonce_size()
+        );
+        assert_eq!(boxed_key.algorithm_name(), mock_key.algorithm_name());
+        assert_eq!(boxed_key.to_bytes(), mock_key.to_bytes());
+        assert_eq!(
+            boxed_key.get_ciphertext(None),
+            mock_key.get_ciphertext(None)
+        );
+        assert_eq!(boxed_key.can_verify(), mock_key.can_verify());
+        assert!(boxed_key.verify(&[], &RawSignature::from(&[][..])).is_ok());
+    }
+
+    #[test]
+    fn test_boxed_signature_trait_delegation() {
+        let raw_sig = RawSignature::from(&[1, 2, 3][..]);
+        let mock_sig = MockSignature(raw_sig);
+        let boxed_sig: Box<dyn SignatureTrait> = Box::new(mock_sig.clone());
+
+        assert_eq!(boxed_sig.codec(), mock_sig.codec());
+        assert_eq!(
+            boxed_sig.signature_nonce_size(),
+            mock_sig.signature_nonce_size()
+        );
+        assert_eq!(boxed_sig.algorithm_name(), mock_sig.algorithm_name());
+        assert_eq!(boxed_sig.as_bytes(), mock_sig.as_bytes());
+        assert_eq!(boxed_sig.raw().as_slice(), mock_sig.raw().as_slice());
+    }
 }

@@ -11,10 +11,13 @@ use crate::{
         write_varint_u64_unsafe, write_varint_usize, write_varint_usize_unsafe,
     },
 };
+use concat_string::concat_string;
 use multihash_codetable::{Code, MultihashDigest};
+use mysteryn_core::concat_vec;
 use rand::{RngCore, rng};
 use std::{
     any::Any,
+    borrow::Cow,
     fmt::{Debug, Display},
     marker::PhantomData,
     str::FromStr,
@@ -105,8 +108,9 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             .map_err(|e| Error::InvalidKey(e.to_string()))?
             .ok_or_else(|| Error::InvalidKey("cannot read multikey prefix".to_owned()))?;
         if prefix != multicodec_prefix::MULTIKEY {
-            return Err(Error::InvalidKey(format!(
-                "not a multikey prefix: 0x{prefix:02x}",
+            return Err(Error::InvalidKey(concat_string!(
+                "not a multikey prefix: 0x",
+                &hex::encode(prefix.to_be_bytes())
             )));
         }
         // Key codec
@@ -212,8 +216,10 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         ))
     }
 
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
+    fn to_bytes(&'_ self) -> Cow<'_, [u8]> {
+        let key_data = self.0.to_bytes();
+        // approx.: 4 u64 + key size + algorithm_name + attributes size
+        let mut buf = Vec::with_capacity(10 * 4 + key_data.len() + 20 + 20);
         let key_codec = self.0.codec();
 
         // Multikey prefix
@@ -232,17 +238,17 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         }
         // Attributes
         let mut attr = self.1.clone();
-        attr.set_key_data(Some(&self.0.to_bytes()));
+        attr.set_key_data(Some(&key_data));
         if key_codec == multicodec_prefix::CUSTOM {
             attr.set_key_type(Some(1)); // secret key marker
             attr.set_algorithm_name(Some(self.algorithm_name()));
         }
         attr.to_writer(&mut buf).expect("unchecked write");
 
-        buf
+        Cow::Owned(buf)
     }
 
-    fn get_shared_secret(&self, ciphertext: Option<Vec<u8>>) -> Option<Vec<u8>> {
+    fn get_shared_secret(&self, ciphertext: Option<&[u8]>) -> Option<Vec<u8>> {
         self.0.get_shared_secret(ciphertext)
     }
 
@@ -257,19 +263,9 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
     fn sign_exchange(
         &self,
         data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
+        other_public_key_raw_bytes: Option<&[u8]>,
         attributes: Option<&mut SignatureAttributes>,
     ) -> Result<RawSignature> {
-        let mut buf = Vec::new();
-        let signature_codec = self.0.signature_codec();
-
-        // Multisig prefix
-        write_varint_u64(multicodec_prefix::MULTISIG, &mut buf)
-            .map_err(|e| Error::IOError(e.to_string()))?;
-        // Signature codec
-        write_varint_u64(signature_codec, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
-        // An empty message
-        write_varint_usize(0, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
         // Attributes
         let mut temp_attributes = SignatureAttributes::default();
         let attributes: &mut SignatureAttributes = if let Some(attributes) = attributes {
@@ -277,11 +273,6 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         } else {
             &mut temp_attributes
         };
-        // custom algorithm name
-        if signature_codec == multicodec_prefix::CUSTOM {
-            attributes.set_algorithm_name(Some(self.algorithm_name()));
-        }
-
         let raw_signature = if self.0.signature_nonce_size() > 0 {
             // the algorithm signature has a nonce
             attributes.set_nonce(None);
@@ -294,24 +285,13 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
             csprng.fill_bytes(&mut nonce);
             attributes.set_nonce(Some(&nonce));
             self.0.sign_exchange(
-                &[data, &nonce].concat(),
+                &concat_vec!(data, &nonce),
                 other_public_key_raw_bytes,
                 Some(attributes),
             )?
         };
-        attributes.set_signature_data(Some(raw_signature.as_bytes()));
-        attributes.to_writer(&mut buf)?;
-
-        Ok(RawSignature::from(buf.as_slice()))
-    }
-
-    fn sign_deterministic(
-        &self,
-        data: &[u8],
-        other_public_key_raw_bytes: Option<Vec<u8>>,
-        attributes: Option<&mut SignatureAttributes>,
-    ) -> Result<RawSignature> {
-        let mut buf = Vec::new();
+        // approx.: 4 u64 + signature size + algorithm_name + attributes size
+        let mut buf = Vec::with_capacity(10 * 4 + raw_signature.as_bytes().len() + 20 + 20);
         let signature_codec = self.0.signature_codec();
 
         // Multisig prefix
@@ -321,6 +301,23 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         write_varint_u64(signature_codec, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
         // An empty message
         write_varint_usize(0, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
+        // custom algorithm name
+        if signature_codec == multicodec_prefix::CUSTOM {
+            attributes.set_algorithm_name(Some(self.algorithm_name()));
+        }
+
+        attributes.set_signature_data(Some(raw_signature.as_bytes()));
+        attributes.to_writer(&mut buf)?;
+
+        Ok(RawSignature::from(buf.as_slice()))
+    }
+
+    fn sign_deterministic(
+        &self,
+        data: &[u8],
+        other_public_key_raw_bytes: Option<&[u8]>,
+        attributes: Option<&mut SignatureAttributes>,
+    ) -> Result<RawSignature> {
         // Attributes
         let mut temp_attributes = SignatureAttributes::default();
         let attributes: &mut SignatureAttributes = if let Some(attributes) = attributes {
@@ -328,16 +325,6 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         } else {
             &mut temp_attributes
         };
-        // custom algorithm name
-        if signature_codec == multicodec_prefix::CUSTOM {
-            attributes.set_algorithm_name(Some(self.algorithm_name()));
-        }
-
-        let nonce_length = attributes.get_nonce().unwrap_or(&vec![]).len();
-        if nonce_length < MIN_NONCE_LENGTH {
-            return Err(Error::ValidationError("Too small nonce length".to_owned()));
-        }
-
         let raw_signature = if self.0.signature_nonce_size() > 0 {
             // the algorithm signature has a nonce, but for deterministics keep a nonce for SKV
             let s =
@@ -352,11 +339,36 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
                 return Err(Error::ValidationError("cannot read nonce".to_owned()));
             };
             self.0.sign_deterministic(
-                &[data, nonce].concat(),
+                &concat_vec!(data, nonce),
                 other_public_key_raw_bytes,
                 Some(attributes),
             )?
         };
+        // approx.: 4 u64 + signature size + algorithm_name + attributes size
+        let mut buf = Vec::with_capacity(10 * 4 + raw_signature.as_bytes().len() + 20 + 20);
+        let signature_codec = self.0.signature_codec();
+
+        // Multisig prefix
+        write_varint_u64(multicodec_prefix::MULTISIG, &mut buf)
+            .map_err(|e| Error::IOError(e.to_string()))?;
+        // Signature codec
+        write_varint_u64(signature_codec, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
+        // An empty message
+        write_varint_usize(0, &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
+        // custom algorithm name
+        if signature_codec == multicodec_prefix::CUSTOM {
+            attributes.set_algorithm_name(Some(self.algorithm_name()));
+        }
+
+        let nonce_length = if self.0.signature_nonce_size() > 0 {
+            self.0.signature_nonce_size()
+        } else {
+            attributes.get_nonce().unwrap_or(&[]).len()
+        };
+        if nonce_length < MIN_NONCE_LENGTH {
+            return Err(Error::ValidationError("Too small nonce length".to_owned()));
+        }
+
         attributes.set_signature_data(Some(raw_signature.as_bytes()));
         attributes.to_writer(&mut buf)?;
 
@@ -371,8 +383,9 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::IOError("cannot read signature prefix".to_owned()))?;
         if prefix != multicodec_prefix::MULTISIG {
-            return Err(Error::InvalidSignature(format!(
-                "invalid signature prefix 0x{prefix:02x}",
+            return Err(Error::InvalidSignature(concat_string!(
+                "invalid signature prefix 0x",
+                &hex::encode(prefix.to_be_bytes())
             )));
         }
         // signature codec
@@ -380,8 +393,9 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
             .map_err(|e| Error::IOError(e.to_string()))?
             .ok_or_else(|| Error::IOError("cannot read signature codec".to_owned()))?;
         if signature_codec != self.0.signature_codec() {
-            return Err(Error::InvalidSignature(format!(
-                "invalid signature alrorithm 0x{signature_codec:02x}"
+            return Err(Error::InvalidSignature(concat_string!(
+                "invalid signature alrorithm 0x",
+                &hex::encode(signature_codec.to_be_bytes())
             )));
         }
         // message should be empty
@@ -395,8 +409,9 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
         let attributes = SignatureAttributes::from_reader(&mut signature)?;
         if let Some(algorithm_name) = attributes.get_algorithm_name()? {
             if algorithm_name != self.algorithm_name() {
-                return Err(Error::InvalidSignature(format!(
-                    "invalid signature algorithm {algorithm_name}"
+                return Err(Error::InvalidSignature(concat_string!(
+                    "invalid signature algorithm ",
+                    algorithm_name
                 )));
             }
         } else if signature_codec == multicodec_prefix::CUSTOM {
@@ -410,18 +425,16 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
 
         if self.0.signature_nonce_size() > 0 {
             // the algorithm signature has a nonce
-            self.0
-                .verify(data, &RawSignature::from(signature_data.as_slice()))?;
+            self.0.verify(data, &RawSignature::from(signature_data))?;
         } else if let Some(nonce) = attributes.get_nonce() {
             // append the nonce to data
             self.0.verify(
-                &[data, nonce].concat(),
-                &RawSignature::from(signature_data.as_slice()),
+                &concat_vec!(data, nonce),
+                &RawSignature::from(signature_data),
             )?;
         } else {
             // no nonce
-            self.0
-                .verify(data, &RawSignature::from(signature_data.as_slice()))?;
+            self.0.verify(data, &RawSignature::from(signature_data))?;
         }
         Ok(())
     }

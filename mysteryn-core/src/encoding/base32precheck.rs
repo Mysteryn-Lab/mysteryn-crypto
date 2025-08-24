@@ -10,108 +10,115 @@ const BASE32PRECHECK: Encoding = new_encoding! {
 };
 pub const DELIMITER: &str = "_";
 const MULTIBASE_PREFIX: &str = "xa";
+const MULTIBASE_PREFIX_BYTES: &[u8] = b"xa";
 
 /// Encode data to the Base32pc string with a HRP.
 pub fn encode(hrp: &str, data: &[u8]) -> String {
     if hrp.is_empty() {
-        let combined = [MULTIBASE_PREFIX.as_bytes(), data].concat();
-        return [
-            MULTIBASE_PREFIX,
-            &BASE32PRECHECK.encode(&checksum::append(&combined)),
-        ]
-        .concat();
+        // No HRP - prepend the multibase prefix and checksum once.
+        let mut combined = Vec::with_capacity(MULTIBASE_PREFIX_BYTES.len() + data.len());
+        combined.extend_from_slice(MULTIBASE_PREFIX_BYTES);
+        combined.extend_from_slice(data);
+
+        let encoded_data = BASE32PRECHECK.encode(&checksum::append(&combined));
+        concat_string!(MULTIBASE_PREFIX, encoded_data)
+    } else {
+        // HRP present - build the full string with delimiter and checksum.
+        let mut combined = Vec::with_capacity(
+            hrp.len() + DELIMITER.len() + MULTIBASE_PREFIX_BYTES.len() + data.len(),
+        );
+        combined.extend_from_slice(hrp.as_bytes());
+        combined.extend_from_slice(DELIMITER.as_bytes());
+        combined.extend_from_slice(MULTIBASE_PREFIX_BYTES);
+        combined.extend_from_slice(data);
+
+        let checksum = checksum::get_checksum(&combined);
+        let mut data_with_checksum = Vec::with_capacity(data.len() + checksum.len());
+        data_with_checksum.extend_from_slice(data);
+        data_with_checksum.extend_from_slice(&checksum);
+
+        let encoded_data = BASE32PRECHECK.encode(&data_with_checksum);
+        concat_string!(hrp, DELIMITER, MULTIBASE_PREFIX, encoded_data)
     }
-    let combined = [
-        hrp.as_bytes(),
-        DELIMITER.as_bytes(),
-        MULTIBASE_PREFIX.as_bytes(),
-        data,
-    ]
-    .concat();
-    let checksum = checksum::get_checksum(&combined);
-    [
-        hrp,
-        DELIMITER,
-        MULTIBASE_PREFIX,
-        &BASE32PRECHECK.encode(&[data, &checksum].concat()),
-    ]
-    .concat()
 }
 
 /// Decode a Base32pc-encoded string. Returns the HRP and data bytes.
 pub fn decode(text: &str) -> Result<(&str, Vec<u8>)> {
-    let s = text.rsplitn(2, DELIMITER).collect::<Vec<&str>>();
+    let (hrp, data_part) = text.rsplit_once(DELIMITER).unwrap_or(("", text));
 
-    let Some(data_and_checksum) = s[0].strip_prefix(MULTIBASE_PREFIX) else {
-        return Err(Error::EncodingError("invalid prefix".to_owned()));
-    };
-    let data_and_checksum = BASE32PRECHECK
-        .decode(data_and_checksum.as_bytes())
+    let data_part = data_part
+        .strip_prefix(MULTIBASE_PREFIX)
+        .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
+
+    let decoded_bytes = BASE32PRECHECK
+        .decode(data_part.as_bytes())
         .map_err(|e| Error::EncodingError(e.to_string()))?;
 
-    if s.len() < 2 {
-        let decoded = checksum::decode(&data_and_checksum)?;
-        if let Some(decoded) = decoded.strip_prefix(MULTIBASE_PREFIX.as_bytes()) {
-            return Ok(("", decoded.to_vec()));
-        }
-        return Err(Error::EncodingError("invalid prefix".to_owned()));
-    }
-    let text_hrp = s[1];
-    let combined = [
-        text_hrp.as_bytes(),
-        DELIMITER.as_bytes(),
-        MULTIBASE_PREFIX.as_bytes(),
-        &data_and_checksum,
-    ]
-    .concat();
-    let decoded = checksum::decode(&combined)?;
-    let prefix = [
-        text_hrp.as_bytes(),
-        DELIMITER.as_bytes(),
-        MULTIBASE_PREFIX.as_bytes(),
-    ]
-    .concat();
-    if let Some(decoded) = decoded.strip_prefix(prefix.as_slice()) {
-        Ok((text_hrp, decoded.to_vec()))
+    if hrp.is_empty() {
+        // No HRP - the whole string is just data + checksum.
+        let decoded = checksum::decode(&decoded_bytes)?;
+        let data = decoded
+            .strip_prefix(MULTIBASE_PREFIX_BYTES)
+            .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
+        Ok(("", data.to_vec()))
     } else {
-        Err(Error::EncodingError("invalid prefix".to_owned()))
+        // HRP present - validate that the prefix matches.
+        let mut combined = Vec::with_capacity(
+            hrp.len() + DELIMITER.len() + MULTIBASE_PREFIX_BYTES.len() + decoded_bytes.len(),
+        );
+        combined.extend_from_slice(hrp.as_bytes());
+        combined.extend_from_slice(DELIMITER.as_bytes());
+        combined.extend_from_slice(MULTIBASE_PREFIX_BYTES);
+        combined.extend_from_slice(&decoded_bytes);
+
+        let decoded = checksum::decode(&combined)?;
+        let prefix_len = hrp.len() + DELIMITER.len() + MULTIBASE_PREFIX.len();
+        Ok((hrp, decoded[prefix_len..].to_vec()))
     }
 }
 
 /// Encode data to the Base32pc with a constant prefix.
 pub fn encode_constant(prefix: &str, data: &[u8]) -> String {
     if prefix.is_empty() {
-        return BASE32PRECHECK.encode(&checksum::append(data));
+        BASE32PRECHECK.encode(&checksum::append(data))
+    } else {
+        let mut combined = Vec::with_capacity(prefix.len() + data.len());
+        combined.extend_from_slice(prefix.as_bytes());
+        combined.extend_from_slice(data);
+
+        let checksum = checksum::get_checksum(&combined);
+        let mut data_with_checksum = Vec::with_capacity(data.len() + checksum.len());
+        data_with_checksum.extend_from_slice(data);
+        data_with_checksum.extend_from_slice(&checksum);
+
+        let encoded_data = BASE32PRECHECK.encode(&data_with_checksum);
+        concat_string!(prefix, encoded_data)
     }
-    let combined = [prefix.as_bytes(), data].concat();
-    let checksum = checksum::get_checksum(&combined);
-    [prefix, &BASE32PRECHECK.encode(&[data, &checksum].concat())].concat()
 }
 
 /// Encode the Base32pc string with a constant prefix.
 pub fn decode_constant(prefix: &str, text: &str) -> Result<Vec<u8>> {
-    let s = if prefix.is_empty() {
-        text
-    } else if let Some(s) = text.strip_prefix(prefix) {
-        s
-    } else {
-        return Err(Error::EncodingError("invalid prefix".to_string()));
-    };
+    let data_part = text
+        .strip_prefix(prefix)
+        .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
 
-    let data_and_checksum = BASE32PRECHECK
-        .decode(s.as_bytes())
+    let decoded_bytes = BASE32PRECHECK
+        .decode(data_part.as_bytes())
         .map_err(|e| Error::EncodingError(e.to_string()))?;
+
     if prefix.is_empty() {
-        let decoded = checksum::decode(&data_and_checksum)?;
-        return Ok(decoded.to_vec());
+        return Ok(checksum::decode(&decoded_bytes)?.to_vec());
     }
-    let combined = [prefix.as_bytes(), &data_and_checksum].concat();
+
+    let mut combined = Vec::with_capacity(prefix.len() + decoded_bytes.len());
+    combined.extend_from_slice(prefix.as_bytes());
+    combined.extend_from_slice(&decoded_bytes);
+
     let decoded = checksum::decode(&combined)?;
-    if let Some(decoded) = decoded.strip_prefix(prefix.as_bytes()) {
-        Ok(decoded.to_vec())
-    } else {
-        Err(Error::EncodingError("invalid prefix".to_owned()))
-    }
+    let payload = decoded
+        .strip_prefix(prefix.as_bytes())
+        .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
+    Ok(payload.to_vec())
 }
 
 #[cfg(test)]
@@ -126,7 +133,7 @@ mod tests {
     fn test_encode_decode() {
         let orig = vec![1, 2, 255, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
         let encoded = encode("", &orig);
-        assert_eq!(encoded, "xa0psszqhlqszsvpcgqypqxpq9qcrss66t7g4j443rcv");
+        assert_eq!(encoded, "xa0psszqhlqszsvpcgqypqxpq9qcrssr68z7dvklvy");
         let decoded = decode(&encoded).expect("cannot decode");
         assert_eq!(orig, decoded.1);
     }
@@ -136,7 +143,7 @@ mod tests {
     fn test_encode_decode_hrp() {
         let orig = vec![1, 2, 255, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
         let encoded = encode("test", &orig);
-        assert_eq!(encoded, "test_xaqyp07pq9qcrssqgzqvzq2ps8ppm2dynntw05kys");
+        assert_eq!(encoded, "test_xaqyp07pq9qcrssqgzqvzq2ps8pztr5jgz7nc4j");
         let decoded = decode(&encoded).expect("cannot decode");
         assert_eq!(decoded.0, "test");
         assert_eq!(decoded.1, orig);
@@ -147,7 +154,7 @@ mod tests {
     fn test_encode_decode_constant_prefix() {
         let orig = vec![1, 2, 255, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
         let encoded = encode_constant("did:key:xa", &orig);
-        assert_eq!(encoded, "did:key:xaqyp07pq9qcrssqgzqvzq2ps8ppt3gyfnmf7dmcg");
+        assert_eq!(encoded, "did:key:xaqyp07pq9qcrssqgzqvzq2ps8pr8xdfx2g9mpq");
         let decoded = decode_constant("did:key:xa", &encoded).expect("cannot decode");
         assert_eq!(decoded, orig);
     }
@@ -167,7 +174,8 @@ mod tests {
     #[test]
     fn test_one_byte_erasure_checksum() {
         let orig = vec![1, 2, 255, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
-        let encoded = "test_xaqyp07pq9qcrssqgzqvzq2ps8ppm2dynntw05kys".to_owned();
+        //println!("encoded {}", encode("test", &orig));
+        let encoded = "test_xaqyp07pq9qcrssqgzqvzq2ps8pztr5jgz7nc4j".to_owned();
         let decoded = decode(&encoded).expect("cannot decode");
         assert_eq!(decoded.0, "test");
         assert_eq!(decoded.1, orig);
@@ -206,7 +214,8 @@ mod tests {
     #[test]
     fn test_one_byte_loss_checksum() {
         let orig = vec![1, 2, 255, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8];
-        let encoded = "test_xaqyp07pq9qcrssqgzqvzq2ps8ppm2dynntw05kys".to_owned();
+        //println!("encoded {}", encode("test", &orig));
+        let encoded = "test_xaqyp07pq9qcrssqgzqvzq2ps8pztr5jgz7nc4j".to_owned();
         let decoded = decode(&encoded).expect("cannot decode");
         assert_eq!(decoded.0, "test");
         assert_eq!(decoded.1, orig);

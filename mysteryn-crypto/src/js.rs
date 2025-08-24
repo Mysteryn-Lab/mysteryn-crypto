@@ -71,7 +71,7 @@ pub fn createSecret(
 /// @throws
 #[wasm_bindgen]
 pub fn secret2bytes(secret_string: &str) -> Result<Vec<u8>, JsError> {
-    Ok(SecretKey::from_str(secret_string)?.to_bytes())
+    Ok(SecretKey::from_str(secret_string)?.to_bytes().to_vec())
 }
 
 /// Get a public key from the secret key.
@@ -98,7 +98,9 @@ pub fn secret2did_pkh(
     hrp: Option<String>,
 ) -> Result<String, JsError> {
     let key = SecretKey::from_str(secret_string)?;
-    Ok(key.get_did_pkh(method_name, hrp.as_deref())?.to_string())
+    Ok(key
+        .get_did_pkh(method_name, hrp.as_deref().unwrap_or(""))?
+        .to_string())
 }
 
 /// Get an Identity from the secret key
@@ -114,7 +116,7 @@ pub fn secret2id(secret_string: &str, hrp: Option<String>) -> Result<String, JsE
 /// @throws
 #[wasm_bindgen]
 pub fn public2bytes(key_string: &str) -> Result<Vec<u8>, JsError> {
-    Ok(PublicKey::from_str(key_string)?.to_bytes())
+    Ok(PublicKey::from_str(key_string)?.to_bytes().to_vec())
 }
 
 /// Get an Identity from the public key.
@@ -142,7 +144,9 @@ pub fn public2did_pkh(
     hrp: Option<String>,
 ) -> Result<String, JsError> {
     let key = PublicKey::from_str(key_string)?;
-    Ok(key.get_did_pkh(method_name, hrp.as_deref())?.to_string())
+    Ok(key
+        .get_did_pkh(method_name, hrp.as_deref().unwrap_or(""))?
+        .to_string())
 }
 
 /// Get a DID from the Identity
@@ -190,11 +194,11 @@ pub fn sign(
 ) -> Result<String, JsError> {
     let key = SecretKey::from_str(secret_string)?;
     let other_public_key_raw_bytes = if let Some(s) = other_public_key {
-        Some(PublicKey::from_str(&s)?.to_bytes())
+        Some(PublicKey::from_str(&s)?.to_bytes().to_vec())
     } else {
         None
     };
-    let sig = key.sign_exchange(data, other_public_key_raw_bytes, None)?;
+    let sig = key.sign_exchange(data, other_public_key_raw_bytes.as_deref(), None)?;
     let signature = Signature::try_from(&sig)?;
     Ok(signature.to_string())
 }

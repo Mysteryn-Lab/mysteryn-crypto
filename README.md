@@ -1,28 +1,28 @@
-# mysteryn-crypto
+# Mysteryn Crypto
 
-This crate provides a range of cryptographic functions, including support for digital signatures, public and private keys, identities and hashes. It also includes functionalities for Decentralized Identifiers (DIDs) and encodings.
+This repository provides a range of cryptographic functions, including support for digital signatures, public and private keys, identities, and hashes. It also includes features for Decentralized Identifiers (DIDs) and various encoding schemes.
 
-Targets: Rust, Wasm, Node.js, Web.
+**Targets:** Rust, Wasm, Node.js, Web.
 
-## Docs
+## Documentation
 
-See the [`mysteryn-crypto` Readme](./mysteryn-crypto/README.md) for the full description.
+For a full description of the project, see the [`mysteryn-crypto` README](./mysteryn-crypto/README.md).
 
-Types:
+**Types:**
 
 - Hash
 - Identity
 - Multikey
 - Multisig
-- Did
+- DID
 
-Encodings:
+**Encodings:**
 
 - Multibase
-- Base32precheck (base32 with a Human Readable Prefix and a checksum)
-- varint
+- Base32precheck (Base32 with a Human-Readable Prefix and a checksum)
+- Varint
 
-Classic algorithms:
+**Classic Algorithms:**
 
 - Ed25519
 - Ed448
@@ -36,7 +36,7 @@ Classic algorithms:
 - X25519
 - HmacSha256
 
-Post-quantum algorithms:
+**Post-Quantum Algorithms:**
 
 - Falcon512
 - Falcon1024
@@ -47,11 +47,11 @@ Post-quantum algorithms:
 - FAEST-128f
 - SLH-DSA-shake-128f
 
-## Workspace members
+## Workspace Members
 
-- `mysteryn-crypto` - the primary crypto library,
-- `mysteryn-core` - the core functions for writing keys implementations,
-- `mysteryn-keys` - a collection of classic and post-quantum digital signature and cryptographic keys algorithms.
+- `mysteryn-crypto` - The primary crypto library.
+- `mysteryn-core` - Core functions for writing key implementations.
+- `mysteryn-keys` - (External repo) A collection of classic and post-quantum digital signature and cryptographic key algorithms.
 
 ## License
 

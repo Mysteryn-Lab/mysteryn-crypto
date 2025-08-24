@@ -17,7 +17,7 @@ fn main() -> Result<()> {
         Some("pub"),
     )?;
     let public_key = PublicKey::try_from(secret_key.public_key())?;
-    let did = public_key.get_did_pkh("mys", None)?;
+    let did = public_key.get_did_pkh("mys", "")?;
     println!("secret {secret_key}\npublic {public_key}\nDID {did}");
 
     // can sign
