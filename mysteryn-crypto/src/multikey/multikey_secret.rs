@@ -2,7 +2,7 @@ use super::{MultikeyPublicKey, Multisig, util::key_to_debug_string};
 use crate::{
     RawSignature,
     attributes::{HASH_ATTR_ID, KeyAttributes, SignatureAttributes},
-    base32precheck,
+    base32pc,
     key_traits::{KeyFactory, PublicKeyTrait, SecretKeyTrait, SignatureTrait},
     multicodec::multicodec_prefix,
     result::{Error, Result},
@@ -86,6 +86,9 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
     ) -> Self {
         // Remove key data, as we have the key instance.
         attributes.set_key_data(None);
+        if key.codec() != multicodec_prefix::CUSTOM {
+            attributes.set_algorithm_name(None);
+        }
         let mut k = Self(key, attributes, hrp, vec![], PhantomData::<KF>);
         let h = Code::Blake3_256.digest(&k.to_bytes());
         k.3 = h.digest().to_vec();
@@ -129,7 +132,7 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             )
         };
         // Key attributes
-        let attributes = KeyAttributes::from_reader(&mut data)?;
+        let mut attributes = KeyAttributes::from_reader(&mut data)?;
         if key_codec == multicodec_prefix::CUSTOM {
             if attributes.get_algorithm_name()?.is_none() {
                 return Err(Error::InvalidKey("no algorithm name".to_string()));
@@ -137,6 +140,8 @@ impl<KF: KeyFactory> MultikeySecretKey<KF> {
             if attributes.get_key_type()? != Some(1) {
                 return Err(Error::InvalidKey("not a secret key".to_string()));
             }
+        } else {
+            attributes.set_algorithm_name(None);
         }
         if attributes.get_key_is_encrypted()? {
             return Err(Error::InvalidKey(
@@ -446,11 +451,15 @@ impl<KF: KeyFactory> SecretKeyTrait for MultikeySecretKey<KF> {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn to_ssh_key(&self) -> Result<String> {
+        self.0.to_ssh_key()
+    }
 }
 
 impl<KF: KeyFactory> Display for MultikeySecretKey<KF> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = base32precheck::encode(self.hrp(), &self.to_bytes());
+        let s = base32pc::encode(self.hrp(), &self.to_bytes());
         write!(f, "{s}")
     }
 }
@@ -478,8 +487,7 @@ impl<KF: KeyFactory> FromStr for MultikeySecretKey<KF> {
     type Err = Error;
 
     fn from_str(key: &str) -> Result<Self> {
-        let (hrp, data) =
-            base32precheck::decode(key).map_err(|e| Error::InvalidKey(e.to_string()))?;
+        let (hrp, data) = base32pc::decode(key).map_err(|e| Error::InvalidKey(e.to_string()))?;
         let s = Self::from_bytes(&data)?;
         if hrp != s.hrp() {
             return Err(Error::InvalidKey("invalid prefix".to_string()));
@@ -517,5 +525,70 @@ impl<KF: KeyFactory> Ord for MultikeySecretKey<KF> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Compare by key hashes.
         self.3.cmp(&other.3)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mysteryn_keys::DefaultKeyFactory;
+
+    #[test]
+    fn test_new() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        assert_eq!(secret_key.hrp(), "secret");
+        assert_eq!(secret_key.public_hrp(), "pub");
+    }
+
+    #[test]
+    fn test_from_to_bytes() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let bytes = secret_key.to_bytes();
+        let restored_secret_key =
+            MultikeySecretKey::<DefaultKeyFactory>::from_bytes(&bytes).unwrap();
+        assert_eq!(secret_key, restored_secret_key);
+    }
+
+    #[test]
+    fn test_from_to_str() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let s = secret_key.to_string();
+        let restored_secret_key = MultikeySecretKey::<DefaultKeyFactory>::from_str(&s).unwrap();
+        assert_eq!(secret_key, restored_secret_key);
+    }
+
+    #[test]
+    fn test_public_multikey() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let public_key = secret_key.public_multikey();
+        assert_eq!(public_key.hrp(), "pub");
     }
 }

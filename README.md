@@ -19,7 +19,7 @@ For a full description of the project, see the [`mysteryn-crypto` README](./myst
 **Encodings:**
 
 - Multibase
-- Base32precheck (Base32 with a Human-Readable Prefix and a checksum)
+- Base32pc (Base32 with a Human-Readable Prefix and a checksum)
 - Varint
 
 **Classic Algorithms:**
@@ -55,4 +55,4 @@ For a full description of the project, see the [`mysteryn-crypto` README](./myst
 
 ## License
 
-This software is licensed under the [MIT license](./LICENSE).
+Licensed under the [Ethical Use License v1.0](./LICENSE.md).

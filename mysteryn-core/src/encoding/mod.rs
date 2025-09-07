@@ -1,3 +1,3 @@
-pub mod base32precheck;
+pub mod base32pc;
 pub mod multibase;
 pub mod varint;

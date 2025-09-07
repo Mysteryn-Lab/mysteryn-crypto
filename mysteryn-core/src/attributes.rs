@@ -16,25 +16,12 @@ pub const KEY_DATA: u64 = 0x01;
 pub const KEY_ALGRORITHM_NAME: u64 = 0x0c;
 pub const KEY_TYPE: u64 = 0x0d;
 pub const KEY_PUBLIC_HRP: u64 = 0x0e;
+
 /**
- * Key attributes:
+ * General attributes.
  *
- * `KeyIsEncrypted (0x00)` : The value is a single boolean byte flag; true if the key data is encrypted.
- * `KeyData (0x01)` : The value is the key data.
- * `CipherCodec (0x02)` : The codec sigil specifying the encryption cipher used to encrypt the key data.
- * `CipherKeyLen (0x03)` : The number of octets in the key encryption key.
- * `CipherNonce (0x04)` : The nonce value for the key encryption cipher.
- * `KdfCodec (0x05)` : The codec sigil specifying the key encryption key derivation function.
- * `KdfSalt (0x06)` : The salt value used in the key encryption key derivation function.
- * `KdfRounds (0x07)` : The number of rounds used in the key encryption key derivation function.
- * `Threshold (0x08)` : The number of threshold signature key shares needed to recreate the key.
- * `Limit (0x09)` : The total number of shares in the split threshold singature key.
- * `ShareIdentifier (0x0a)` : The identifer for a given threshold key share.
- * `ThresholdData (0x0b)` : Threshold signing codec-specific data. This is typically use to
- *      store the accumulated key shares while gathring enough shares to recreate the key.
- * `AlgorithmName (0x0c)` : The key algorithm name of the custom key codec.
- * `KeyType (0x0d)` : The key type of the custom codec (0 or not set - public, 1 - secret).
- * `PublicHrp` (0x0e) : Public key human-readable prefix (used for a secret key).
+ * This struct holds a map of values, serializable to the Multikey & Multisig
+ * formats.
  */
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Attributes(pub BTreeMap<u64, Vec<u8>>);
@@ -108,6 +95,26 @@ impl Default for Attributes {
     }
 }
 
+/**
+ * Multikey key attributes.
+ *
+ * - `KeyIsEncrypted (0x00)` : The value is a single boolean byte flag; true if the key data is encrypted.
+ * - `KeyData (0x01)` : The value is the key data.
+ * - `CipherCodec (0x02)` : The codec sigil specifying the encryption cipher used to encrypt the key data.
+ * - `CipherKeyLen (0x03)` : The number of octets in the key encryption key.
+ * - `CipherNonce (0x04)` : The nonce value for the key encryption cipher.
+ * - `KdfCodec (0x05)` : The codec sigil specifying the key encryption key derivation function.
+ * - `KdfSalt (0x06)` : The salt value used in the key encryption key derivation function.
+ * - `KdfRounds (0x07)` : The number of rounds used in the key encryption key derivation function.
+ * - `Threshold (0x08)` : The number of threshold signature key shares needed to recreate the key.
+ * - `Limit (0x09)` : The total number of shares in the split threshold singature key.
+ * - `ShareIdentifier (0x0a)` : The identifer for a given threshold key share.
+ * - `ThresholdData (0x0b)` : Threshold signing codec-specific data. This is typically use to
+ *   store the accumulated key shares while gathring enough shares to recreate the key.
+ * - `AlgorithmName (0x0c)` : The key algorithm name of the custom key codec.
+ * - `KeyType (0x0d)` : The key type of the custom codec (0 or not set - public, 1 - secret).
+ * - `PublicHrp` (0x0e) : Public key human-readable prefix (used for a secret key).
+ */
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct KeyAttributes(pub Attributes);
 
@@ -214,20 +221,19 @@ pub const SIG_PUBLIC_KEY: u64 = 0x09;
 pub const BLS12381_BASIC_SCHEME: u64 = 0x00;
 
 /**
- * Signature attributes:
+ * Multisig signature attributes.
  *
- * `SigData (0x00)` : The signature data.
- * `PayloadEncoding (0x01)` : The sigil specifying the encoding of the signed message.
- * `Scheme (0x02)` : The threshold signing scheme.
- * `Threshold (0x03)` : The minumum number of signature shares required to reconstruct the signature.
- * `Limit (0x04)` : The total number of shares for a threshold signature.
- * `ShareIdentifier (0x05)` : The identifier for the signature share.
- * `ThresholdData (0x06)` : Codec-speicific threshold signature data. This is typically used to accumulate threshold signature shares.
- * `AlgorithmName (0x07)` : The signature algorithm name of the custom signature codec.
- * `Nonce (0x08)` : Nonce bytes, for codecs without signature randomization.
- * `PublicKey(0x09)` : Public key bytes
+ * - `SigData (0x00)` : The signature data.
+ * - `PayloadEncoding (0x01)` : The sigil specifying the encoding of the signed message.
+ * - `Scheme (0x02)` : The threshold signing scheme.
+ * - `Threshold (0x03)` : The minumum number of signature shares required to reconstruct the signature.
+ * - `Limit (0x04)` : The total number of shares for a threshold signature.
+ * - `ShareIdentifier (0x05)` : The identifier for the signature share.
+ * - `ThresholdData (0x06)` : Codec-speicific threshold signature data. This is typically used to accumulate threshold signature shares.
+ * - `AlgorithmName (0x07)` : The signature algorithm name of the custom signature codec.
+ * - `Nonce (0x08)` : Nonce bytes, for codecs without signature randomization.
+ * - `PublicKey(0x09)` : Public key bytes
  */
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SignatureAttributes(pub Attributes);
 

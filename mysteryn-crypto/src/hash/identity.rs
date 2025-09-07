@@ -1,6 +1,6 @@
 use super::hash_impl::{CustomVisitor, Hash};
 use crate::{
-    base32precheck,
+    base32pc,
     key_traits::{KeyFactory, PublicKeyTrait},
     multikey::MultikeyPublicKey,
     result::{Error, Result},
@@ -61,7 +61,7 @@ impl<KF: KeyFactory> From<&MultikeyPublicKey<KF>> for Identity {
 
 impl Display for Identity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", base32precheck::encode(self.hrp(), self.1.bytes()))
+        write!(f, "{}", base32pc::encode(self.hrp(), self.1.bytes()))
     }
 }
 
@@ -70,7 +70,7 @@ impl std::fmt::Debug for Identity {
         write!(
             f,
             "Identity(\"{}\")",
-            base32precheck::encode(self.hrp(), self.1.bytes())
+            base32pc::encode(self.hrp(), self.1.bytes())
         )
     }
 }
@@ -79,8 +79,7 @@ impl FromStr for Identity {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let (hrp, data) =
-            base32precheck::decode(s).map_err(|e| Error::EncodingError(e.to_string()))?;
+        let (hrp, data) = base32pc::decode(s).map_err(|e| Error::EncodingError(e.to_string()))?;
         Ok(Self::new(hrp, Hash::try_from(data.as_slice())?))
     }
 }

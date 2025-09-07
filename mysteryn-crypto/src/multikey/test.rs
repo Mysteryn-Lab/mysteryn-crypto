@@ -348,3 +348,24 @@ fn test_encode_decode_did() -> Result<()> {
 
     Ok(())
 }
+
+#[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+#[test]
+fn test_to_ssh_key() -> Result<()> {
+    let secret_key = SecretKey::from_str(SECRET1)?;
+    let public_key = PublicKey::try_from(secret_key.public_key()).unwrap();
+
+    let ssh_secret_key = secret_key.to_ssh_key()?;
+    let ssh_public_key = public_key.to_ssh_key()?;
+
+    assert_eq!(
+        ssh_secret_key,
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\nQyNTUxOQAAACDKFGMu1jbNADPAzoarqh+LtAo+zl5n01wtfmPedxI5mgAAAIiODVDYjg1Q\n2AAAAAtzc2gtZWQyNTUxOQAAACDKFGMu1jbNADPAzoarqh+LtAo+zl5n01wtfmPedxI5mg\nAAAECHo7XfPKbjwWjf7+TJjxF4O3aMdUp1cyg5srIa3Om1HcoUYy7WNs0AM8DOhquqH4u0\nCj7OXmfTXC1+Y953EjmaAAAAAAECAwQF\n-----END OPENSSH PRIVATE KEY-----\n"
+    );
+    assert_eq!(
+        ssh_public_key,
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMoUYy7WNs0AM8DOhquqH4u0Cj7OXmfTXC1+Y953Ejma"
+    );
+
+    Ok(())
+}

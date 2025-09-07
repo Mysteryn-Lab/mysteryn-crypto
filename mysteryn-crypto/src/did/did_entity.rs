@@ -1,11 +1,10 @@
 use super::did_document::{Document, KeyFormat, VerificationMethod};
 use crate::{
-    Hash, Identity, base32precheck, multibase,
+    Hash, Identity, base32pc, multibase,
     multicodec::multicodec_prefix,
     result::{Error, Result},
     varint::{
-        encode_varbytes, encode_varint_u64, read_varbytes, read_varint_u64, write_varbytes,
-        write_varint_u64, write_varint_usize,
+        read_varbytes, read_varint_u64, write_varbytes, write_varint_u64, write_varint_usize,
     },
 };
 use concat_string::concat_string;
@@ -24,7 +23,7 @@ pub const DID_BASE58_PREFIX: &str = "did:key:z";
 #[derive(PartialEq, Eq)]
 pub enum DidEncoding {
     Base58btc,
-    Base32precheck,
+    Base32pc,
 }
 
 // Note: varint encoding of multicodec 0x0d1d.
@@ -208,6 +207,11 @@ impl Did {
                 concat_string!("pkh:", hrp)
             }
         } else {
+            if !hrp.is_empty() && hrp != method_name {
+                return Err(Error::ValidationError(
+                    "method name doesn't match id prefix".to_string(),
+                ));
+            }
             concat_string!("pkh:", method_name)
         };
         // method-name
@@ -236,15 +240,18 @@ impl Did {
         let codec = read_varint_u64(&mut buf)
             .map_err(|e| Error::EncodingError(e.to_string()))?
             .ok_or_else(|| Error::ValidationError("invalid codec".to_string()))?;
-        if codec != multicodec_prefix::IDENTITY {
-            return Err(Error::ValidationError(
-                "does not contain identity".to_string(),
-            ));
-        }
         let method_specific_id =
             read_varbytes(&mut buf).map_err(|e| Error::EncodingError(e.to_string()))?;
-        Identity::try_from(method_specific_id.as_slice())
-            .map_err(|e| Error::EncodingError(e.to_string()))
+        if codec == multicodec_prefix::IDENTITY {
+            Identity::try_from(method_specific_id.as_slice())
+                .map_err(|e| Error::EncodingError(e.to_string()))
+        } else if let Ok(hash) = Hash::try_from(method_specific_id.as_slice()) {
+            Ok(Identity::new("", hash))
+        } else {
+            Err(Error::ValidationError(
+                "does not contain identity".to_string(),
+            ))
+        }
     }
 
     pub fn hrp(&self) -> String {
@@ -354,12 +361,12 @@ impl Did {
             }
             let key = &concat_vec!(buf, method_specific_id);
 
-            if *encoding == DidEncoding::Base32precheck {
+            if *encoding == DidEncoding::Base32pc {
                 return Ok(concat_string!(
                     DID_PREFIX,
                     method_name,
                     ":",
-                    &base32precheck::encode(&hrp, key),
+                    &base32pc::encode(&hrp, key),
                     url
                 ));
             }
@@ -379,27 +386,18 @@ impl Did {
                 let id = Identity::try_from(method_specific_id.as_slice())
                     .map_err(|e| Error::IOError(e.to_string()))?;
                 (id.hrp().to_owned(), id.hash().bytes().to_vec())
-            } else {
+            } else if let Ok(hash) = Hash::try_from(method_specific_id.as_slice()) {
                 // some hash
-                let hash = Hash::try_from(
-                    [
-                        encode_varint_u64(codec),
-                        encode_varbytes(&method_specific_id),
-                    ]
-                    .concat()
-                    .as_slice(),
-                )?;
                 (String::new(), hash.bytes().to_vec())
+            } else {
+                let id_str = std::str::from_utf8(&method_specific_id)
+                    .map_err(|e| Error::EncodingError(e.to_string()))?;
+                return Ok(concat_string!(DID_PREFIX, method_name, ":", id_str, url));
             };
-            if *encoding == DidEncoding::Base32precheck {
-                return Ok([
-                    DID_PREFIX,
-                    method_name,
-                    ":",
-                    &base32precheck::encode(&hrp, &bytes),
-                    url,
-                ]
-                .concat());
+            if *encoding == DidEncoding::Base32pc {
+                let id = base32pc::encode(&hrp, &bytes);
+                let id = id.rsplit_once('_').map_or(id.as_str(), |s| s.1);
+                return Ok([DID_PREFIX, method_name, ":", id, url].concat());
             }
             return Ok([
                 DID_PREFIX,
@@ -451,7 +449,7 @@ impl Did {
             }
 
             if !hrp.is_empty() {
-                return Ok(base32precheck::encode(&hrp, &method_specific_id));
+                return Ok(base32pc::encode(&hrp, &method_specific_id));
             }
             return Ok(multibase::to_base58(&method_specific_id));
         }
@@ -560,7 +558,7 @@ impl Display for Did {
             match self.encode(if self.hrp().is_empty() {
                 &DidEncoding::Base58btc
             } else {
-                &DidEncoding::Base32precheck
+                &DidEncoding::Base32pc
             }) {
                 Ok(did_str) => did_str,
                 Err(e) => concat_string!("<", e.to_string(), ">"),
@@ -644,8 +642,8 @@ impl FromStr for Did {
                 (tail, "")
             };
 
-            let key = if key.contains(base32precheck::DELIMITER) {
-                let (_, key) = base32precheck::decode(key)?;
+            let key = if key.contains(base32pc::DELIMITER) {
+                let (_, key) = base32pc::decode(key)?;
                 key
             } else {
                 multibase::decode(key)?
@@ -676,13 +674,27 @@ impl FromStr for Did {
                 (tail, "")
             };
 
-            if let Ok(id) = Identity::from_str(hash) {
+            let id_candidate = concat_string!(
+                method_name.strip_prefix("pkh:").unwrap_or(&method_name),
+                "_",
+                hash
+            );
+            if let Ok(id) = Identity::from_str(&id_candidate) {
                 // method-code
                 write_varint_u64(multicodec_prefix::IDENTITY, &mut buf)
                     .map_err(|e| Error::IOError(e.to_string()))?;
                 // method-specific-id
                 write_varbytes(&id.to_bytes(), &mut buf)
                     .map_err(|e| Error::IOError(e.to_string()))?;
+                // url-varbytes
+                write_varbytes(url.as_bytes(), &mut buf)
+                    .map_err(|e| Error::IOError(e.to_string()))?;
+            } else if let Ok(id) = Hash::from_str(hash) {
+                // method-code
+                write_varint_u64(id.codec(), &mut buf)
+                    .map_err(|e| Error::IOError(e.to_string()))?;
+                // method-specific-id
+                write_varbytes(id.bytes(), &mut buf).map_err(|e| Error::IOError(e.to_string()))?;
                 // url-varbytes
                 write_varbytes(url.as_bytes(), &mut buf)
                     .map_err(|e| Error::IOError(e.to_string()))?;
@@ -780,6 +792,7 @@ mod tests {
         varint::{read_varbytes, read_varint_u64},
     };
     use crate::{multicodec::multicodec_prefix, test::dag_cbor_roundtrip};
+    use mysteryn_core::multibase;
     use mysteryn_keys::{DefaultKeyFactory, ed25519::*, falcon512::*};
     use std::str::FromStr;
     #[cfg(all(target_family = "wasm", target_os = "unknown"))]
@@ -788,20 +801,24 @@ mod tests {
     type PublicKey = MultikeyPublicKey<DefaultKeyFactory>;
     type SecretKey = MultikeySecretKey<DefaultKeyFactory>;
 
-    const PUBLIC: &str = "z46jJo6Ah1hEcZHgHUNPedH9aU5YgcXfKarmuKtm5V6Ug";
-    const DID_STR: &str = "did:key:z6MkhYzMPLR8MEj5fnWz9wMVUNhaHepY2QugGsgqAAj6QKG4";
+    const PUBLIC: &str = "z7codm6KnRVquT4fy4zNMXgemx4k3bmZixUqvixHtM7SC";
+    //const PUBLIC_PREFIXED: &str = "z6Mkm54gMLaDm3LNZZWfkZLCNnCmme1u1ep5eVkrZEFuGLDa";
+    const DID_STR: &str = "did:key:z6Mkm54gMLaDm3LNZZWfkZLCNnCmme1u1ep5eVkrZEFuGLDa";
     const DID_URL_STR: &str =
-        "did:key:z46jJo6Ah1hEcZHgHUNPedH9aU5YgcXfKarmuKtm5V6Ug?example=123&test=true";
+        "did:key:z6Mkm54gMLaDm3LNZZWfkZLCNnCmme1u1ep5eVkrZEFuGLDa?example=123&test=true";
     const MULTIKEY_PUBLIC: &str =
-        "pub_xahgjw6qgrwp6kyqgpyr6m6pzcm2apgpy9qn2w0dyaawq8nnmqy7w6pnl93nxx26ga8wvk7ng8k54etmr9";
-    const MULTIKEY_DID_STR: &str = "did:key:pub_xahgjw6qgrwp6kyqgpyr6m6pzcm2apgpy9qn2w0dyaawq8nnmqy7w6pnl93nxx26ga8wvk7ng8k54etmr9";
-    const FALCON_PUBLIC: &str = "z33F6fAkYB9t5RxszqufuwFtQeMC5ayfWWVvEP2cAYJvcCsDUqDNv3ZnebJRaH2Z6xKnzRV1Wepue6k5VzwmQJVi1rxXTG8MqQfevBxAUF4fy5GC9rzWXSSdYNbGPd94up5oixTgFKg9nGqLLjPB9iqzQB5PcKu4w5CfG2jTQSvbLaGD1GTjtQPxMzinodDnp3otvyxGbULkXRjVrXXnwZMNA5ZjgJQogitUdj8RzumQTMDGk3Syb9DnYsdDEGkHELvJj3cE3K1NkJtjJ8MVeexPN9wD1SLhydUw97mVmeGsS42fguk3nkTTUtppYvyjaB2kviBRbccZFJZPAqwKaX4BEp5obWoMg12c38h82sQbtHGZAoHjH47qjUuDe6gjHSzJqrH5ctQ6Ge9UW8bjWkzTxmLDk3xTv94n5GwJvsqxvuxQmyDai1oWDxMF3jwhYzseRbUyHxGNMboWEzWJ7L9uwJ2JFiCnZMH7ukA9tf6RBCL2STqytr4EXFryK9zYVedQhB6MqYNQec7TUPBwChEhe3XVDrUeTr88pMFnGcwXPJdXYadCwHjDXEEUBmFvb9WYyJcSurHq2QkrpPXvmSKUsk4idpwezrV8LRNSRL2sBb1kDkGtbaD9LBNiqRABPJnz4xycHxRbd62GUH54kX36LZ1FK4BZqk426y6WRxpm38udEXECQfv1FhM5DqFp6TjjYm2eSRsYeAqrAaozrobW8wrTywavVgDCrpgrXN2PFtu2jRNs78svih37f4MVUVpYCMu1BdZVJWTeg8w4xhNSBvRauyGcwAgCkuVG3svUnG3WmZEggVhnbuuLRPgv2i93kfhriCn8oUr4DMeigPetpuRmnbryVKbRzd3aAfandZjDA512hAN9MMCS8wD1PLDrv5mmAhMj1CizXm7QJXvek6NDCPfpCpnqFgbavo4EKf7aCURyuKgZRKPtZSe99RWkGv3tXeTTenEiv7sHNzt3j9Vg84CBcKickPD9zEPd6GkLHBgkRRgSi1NmT4yrsqpPkKbS7BFTuQ3PVSwq8mcXFuqRmZsCn1xVLTwYiXxQXf9bRvCbKzePC4ebCzvor2vbhCG8HujjfNfGCwgX7CgLKWbjDscxNsKxsgHVGK1ch5RyAi7qcakX46rJZjypH8cQL3YXznTvh7ynfV8BJcQ6wrTa6MJXbTKCZUaRDqQCxAo5aCD46ARnUhvZf8UWh1vKPbqSAf";
-    const FALCON_DID_STR: &str = "did:key:z133F6fAkYB9t5RxszqufuwFtQeMC5ayfWWVvEP2cAYJvcCsDUqDNv3ZnebJRaH2Z6xKnzRV1Wepue6k5VzwmQJVi1rxXTG8MqQfevBxAUF4fy5GC9rzWXSSdYNbGPd94up5oixTgFKg9nGqLLjPB9iqzQB5PcKu4w5CfG2jTQSvbLaGD1GTjtQPxMzinodDnp3otvyxGbULkXRjVrXXnwZMNA5ZjgJQogitUdj8RzumQTMDGk3Syb9DnYsdDEGkHELvJj3cE3K1NkJtjJ8MVeexPN9wD1SLhydUw97mVmeGsS42fguk3nkTTUtppYvyjaB2kviBRbccZFJZPAqwKaX4BEp5obWoMg12c38h82sQbtHGZAoHjH47qjUuDe6gjHSzJqrH5ctQ6Ge9UW8bjWkzTxmLDk3xTv94n5GwJvsqxvuxQmyDai1oWDxMF3jwhYzseRbUyHxGNMboWEzWJ7L9uwJ2JFiCnZMH7ukA9tf6RBCL2STqytr4EXFryK9zYVedQhB6MqYNQec7TUPBwChEhe3XVDrUeTr88pMFnGcwXPJdXYadCwHjDXEEUBmFvb9WYyJcSurHq2QkrpPXvmSKUsk4idpwezrV8LRNSRL2sBb1kDkGtbaD9LBNiqRABPJnz4xycHxRbd62GUH54kX36LZ1FK4BZqk426y6WRxpm38udEXECQfv1FhM5DqFp6TjjYm2eSRsYeAqrAaozrobW8wrTywavVgDCrpgrXN2PFtu2jRNs78svih37f4MVUVpYCMu1BdZVJWTeg8w4xhNSBvRauyGcwAgCkuVG3svUnG3WmZEggVhnbuuLRPgv2i93kfhriCn8oUr4DMeigPetpuRmnbryVKbRzd3aAfandZjDA512hAN9MMCS8wD1PLDrv5mmAhMj1CizXm7QJXvek6NDCPfpCpnqFgbavo4EKf7aCURyuKgZRKPtZSe99RWkGv3tXeTTenEiv7sHNzt3j9Vg84CBcKickPD9zEPd6GkLHBgkRRgSi1NmT4yrsqpPkKbS7BFTuQ3PVSwq8mcXFuqRmZsCn1xVLTwYiXxQXf9bRvCbKzePC4ebCzvor2vbhCG8HujjfNfGCwgX7CgLKWbjDscxNsKxsgHVGK1ch5RyAi7qcakX46rJZjypH8cQL3YXznTvh7ynfV8BJcQ6wrTa6MJXbTKCZUaRDqQCxAo5aCD46ARnUhvZf8UWh1vKPbqSAf?alg=Falcon-512";
-    const DID_PKH_STR: &str = "did:pkh:mys:zgW2mgt3C1zSi9KYKGjm4WMXfHXjkmcHnqH3avFmCCFKNM2";
+        "mys_xahgjw6qgrd4uhxqgpyzzhny3ylpyklhcrlv63hcty26k3jrkxu9nhrpgc0us8r9y8zalh7xqzpptetumh";
+    const MULTIKEY_DID_STR: &str = "did:key:mys_xahgjw6qgrd4uhxqgpyzzhny3ylpyklhcrlv63hcty26k3jrkxu9nhrpgc0us8r9y8zalh7xqzpptetumh";
+    const FALCON_PUBLIC: &str = "z3822NDFsrmnHuBXvrM3n8RUY5ZjmsJtJyDdLvr6mbG6vt6Qn2pG8KYYfpYpjBLi1Lz3yWvqPma648GK9eBUVvdKQDAJKZijEZFNnk8gKvZkEUN7Vnkbr2CrDA2Ma7HJVgoJ6GjoGbCebEuMykxdKUCRtgmCo833tri318LG6fvXqKjMFM1MVoKdEiZPPjXvHw91cu1Luz9ZkNae3543CCNQJ3JdTuw4TtdX7v7ypWnQ6giQsw6q684oETyfo919asvLPg4LvT6fg5ttWPenXM5YXrLs5ospoCVP3Ci25uWWzoC48Hp4KTusLBf2GhahHFK8dQBZWn3DoysJGvktcx68uozrPekMmdjKuWnPegXnrpZjNVT2rg6AVBMxB6FeqJ8jGSFX6L1BQhRo93KyVFhsmCU1JJvqfyC7nmmiHL3KHcPsgrRcDWQBYcX8yZcXM9rf3ScYjphaLZLQd22gdy1G4hbZje31z6ZCquYU3xcMqbG7txmTj4t7uY9HCE14f3yWkVc1wDmAaGNvPTiFyTxjPUjKRdkMSuAVZcJUHbSWVb1MXFc7TRpJRBUhYEsQt9uZ1MudMXEe5yxarZn4GbsrTrrhk8HaYW7Yez9VYC1x9pigNuxAKmB3DesUiL1se9ppSa2LJkAFB5rWE6xPKgfu2xEaQQYWWGY7qGMe14hzyuVQquLC1rTLMjPPhchLqsWzXbgr5angbsLx8Q5yGSafepeQGtrKDmwc4Yvv7121B1wJEzrobd2cgUNkZCLqSzzsh6x6Ly7BGErgGCh8FwGS25CNYQEUwFxcbU4ppjYS2W6AqQqNn3ESb5Dauf1UytYQoeM2VrtCAmyvitnAuidUeV5pJmS96Z5C34V8nVFKktgRaScT8y7anmfWjVismWazaHhKqnSXWsRHAzrFaRFsmo1difMN5mq8rnGydVjttFWa1zE5sqLsh8vLEHSNyuqQQ9aNHwwesf9XBmPRoUvezG1xTsCdecviRjZxYmLYjKJNNx27GK6XkbB3D1rf5vabtw3F5VfBsTiGzveRCL9JNiwfo4Qg59ot9gnPnwpFtMBjgy8PX5cZjR5zWmdTNQZrSuSc9YRfyKMSwA4LRTiGT4xvBWbug2Kr5bRXZ5uQyCqcN2HtN9Ex1LGjgYadP9ZSaS9TwBn5kxSuCubZQJx1YzuojLSUFEprGy4hPAechL2ojUcHZoPprV3WTFVFkPMnNGGGqR";
+    const FALCON_DID_STR: &str = "did:key:z13822NDFsrmnHuBXvrM3n8RUY5ZjmsJtJyDdLvr6mbG6vt6Qn2pG8KYYfpYpjBLi1Lz3yWvqPma648GK9eBUVvdKQDAJKZijEZFNnk8gKvZkEUN7Vnkbr2CrDA2Ma7HJVgoJ6GjoGbCebEuMykxdKUCRtgmCo833tri318LG6fvXqKjMFM1MVoKdEiZPPjXvHw91cu1Luz9ZkNae3543CCNQJ3JdTuw4TtdX7v7ypWnQ6giQsw6q684oETyfo919asvLPg4LvT6fg5ttWPenXM5YXrLs5ospoCVP3Ci25uWWzoC48Hp4KTusLBf2GhahHFK8dQBZWn3DoysJGvktcx68uozrPekMmdjKuWnPegXnrpZjNVT2rg6AVBMxB6FeqJ8jGSFX6L1BQhRo93KyVFhsmCU1JJvqfyC7nmmiHL3KHcPsgrRcDWQBYcX8yZcXM9rf3ScYjphaLZLQd22gdy1G4hbZje31z6ZCquYU3xcMqbG7txmTj4t7uY9HCE14f3yWkVc1wDmAaGNvPTiFyTxjPUjKRdkMSuAVZcJUHbSWVb1MXFc7TRpJRBUhYEsQt9uZ1MudMXEe5yxarZn4GbsrTrrhk8HaYW7Yez9VYC1x9pigNuxAKmB3DesUiL1se9ppSa2LJkAFB5rWE6xPKgfu2xEaQQYWWGY7qGMe14hzyuVQquLC1rTLMjPPhchLqsWzXbgr5angbsLx8Q5yGSafepeQGtrKDmwc4Yvv7121B1wJEzrobd2cgUNkZCLqSzzsh6x6Ly7BGErgGCh8FwGS25CNYQEUwFxcbU4ppjYS2W6AqQqNn3ESb5Dauf1UytYQoeM2VrtCAmyvitnAuidUeV5pJmS96Z5C34V8nVFKktgRaScT8y7anmfWjVismWazaHhKqnSXWsRHAzrFaRFsmo1difMN5mq8rnGydVjttFWa1zE5sqLsh8vLEHSNyuqQQ9aNHwwesf9XBmPRoUvezG1xTsCdecviRjZxYmLYjKJNNx27GK6XkbB3D1rf5vabtw3F5VfBsTiGzveRCL9JNiwfo4Qg59ot9gnPnwpFtMBjgy8PX5cZjR5zWmdTNQZrSuSc9YRfyKMSwA4LRTiGT4xvBWbug2Kr5bRXZ5uQyCqcN2HtN9Ex1LGjgYadP9ZSaS9TwBn5kxSuCubZQJx1YzuojLSUFEprGy4hPAechL2ojUcHZoPprV3WTFVFkPMnNGGGqR?alg=Falcon-512";
+    //const IDENTITY: &str = "xa0ps3ugy8y8p36qk9js2jj4qgafkv2dhl6zl032kwglu2zqvtdm5rsd5jz77q98dqzxsfk";
+    //const IDENTITY_BASE58: &str = "z1gW6mAB3Nhk7z2ckCizjMfdPJukb2UvJRhp6PkrxL81izTg";
+    const DID_PKH_STR: &str = "did:pkh:mys:zgW6mAB3Nhk7z2ckCizjMfdPJukb2UvJRhp6PkrxL81izTg";
+    //const IDENTITY_HRP: &str = "mys_xarcsgwgwrr5pvt9q4992q36nvc5m0l597lz4vu3lc5yqckmhg8qmfy960jzczm9cstq";
     const DID_PKH_HRP_STR: &str =
-        "did:pkh:mys:id_xarcsyh4durd0lefdg43d77fjsr755vpfn2h433tdf9ykxz8l8a3sz4nwrky72wzezlq";
+        "did:pkh:mys:xarcsgwgwrr5pvt9q4992q36nvc5m0l597lz4vu3lc5yqckmhg8qmfy960jzczm9cstq";
     const DID_PKH_MULTIKEY_STR: &str =
-        "did:pkh:mys:id_xarcsvmunqp4ezcvnsgrzdfe0knm36j0rerpcylrj0yaesza8dpgaltlx0wkgwd4vets";
+        "did:pkh:mys:xarcs8r9x45wzu9kddgphmkextlkuerv8sdvh64vu380gprhkuhsz9awzs255cgunklu";
 
     // Generate the above keys.
     #[test]
@@ -810,14 +827,21 @@ mod tests {
         let secret1 = Ed25519SecretKey::new();
         let public1 = secret1.public_key();
         println!("const PUBLIC: &str = \"{public1}\";");
+        println!(
+            "//const PUBLIC_PREFIXED: &str = \"{}\";",
+            multibase::to_base58(public1.to_prefixed().as_ref())
+        );
         println!("const DID_STR: &str = \"{}\";", public1.get_did()?);
-        println!("const DID_URL_STR: &str = \"did:key:{public1}?example=123&test=true\";");
+        println!(
+            "const DID_URL_STR: &str = \"{}?example=123&test=true\";",
+            public1.get_did()?
+        );
         let secret2 = SecretKey::new(
             multicodec_prefix::ED25519_SECRET,
             None,
             None,
             Some("secret"),
-            Some("pub"),
+            Some("mys"),
         )?;
         let public2 = secret2.public_key();
         println!("const MULTIKEY_PUBLIC: &str = \"{public2}\";");
@@ -827,16 +851,22 @@ mod tests {
         println!("const FALCON_PUBLIC: &str = \"{public3}\";");
         println!("const FALCON_DID_STR: &str = \"{}\";", public3.get_did()?);
         let id1 = Identity::from_public_key(&public1, "");
+        println!("//const IDENTITY: &str = \"{id1}\";");
+        println!(
+            "//const IDENTITY_BASE58: &str = \"{}\";",
+            multibase::to_base58(&id1.to_bytes())
+        );
         println!(
             "const DID_PKH_STR: &str = \"{}\";",
             Did::from_identity(&id1, "mys")?
         );
-        let id2 = Identity::from_public_key(&public1, "id");
+        let id2 = Identity::from_public_key(&public1, "mys");
+        println!("//const IDENTITY_HRP: &str = \"{id2}\";");
         println!(
             "const DID_PKH_HRP_STR: &str = \"{}\";",
             Did::from_identity(&id2, "mys")?
         );
-        let id3 = Identity::from_public_key(&public2, "id");
+        let id3 = Identity::from_public_key(&public2, "mys");
         println!(
             "const DID_PKH_MULTIKEY_STR: &str = \"{}\";",
             Did::from_identity(&id3, "mys")?
@@ -931,8 +961,8 @@ mod tests {
         assert_eq!(
             method_data,
             vec![
-                46, 10, 205, 32, 181, 195, 157, 135, 240, 140, 38, 24, 154, 11, 236, 141, 238, 180,
-                224, 137, 46, 39, 84, 226, 125, 36, 39, 55, 116, 130, 67, 217
+                98, 82, 45, 202, 237, 72, 108, 82, 0, 121, 35, 128, 181, 142, 149, 229, 218, 229,
+                229, 42, 219, 92, 95, 2, 138, 51, 214, 42, 67, 186, 227, 29
             ]
         );
 
@@ -952,9 +982,8 @@ mod tests {
             DID_STR
         );
         assert_eq!(
-            did.encode(&DidEncoding::Base32precheck)
-                .expect("cannot encode"),
-            "did:key:xa0ps76qfwptxjpdwrnkrlprpxrzdqhmyda66wpzfwya2wylfyyumhfqjrm9f07wl6eyj77"
+            did.encode(&DidEncoding::Base32pc).expect("cannot encode"),
+            "did:key:xa0ps76qtz2gku4m2gd3fqq7frsz6ca909mtj722kmt30s9z3n6c4y8whrr5yr8r09thttc"
         );
 
         let did2 = Did::from_str(DID_STR).expect("cannot get did");
@@ -964,9 +993,8 @@ mod tests {
             DID_STR
         );
         assert_eq!(
-            did2.encode(&DidEncoding::Base32precheck)
-                .expect("cannot encode"),
-            "did:key:xa0ps76qfwptxjpdwrnkrlprpxrzdqhmyda66wpzfwya2wylfyyumhfqjrm9f07wl6eyj77"
+            did2.encode(&DidEncoding::Base32pc).expect("cannot encode"),
+            "did:key:xa0ps76qtz2gku4m2gd3fqq7frsz6ca909mtj722kmt30s9z3n6c4y8whrr5yr8r09thttc"
         );
     }
 
@@ -997,7 +1025,7 @@ mod tests {
     #[test]
     fn can_create_did_pkh_from_multikey() {
         let key = PublicKey::from_str(MULTIKEY_PUBLIC).expect("cannot decode key string");
-        let did = key.get_did_pkh("mys", "id").expect("cannot get did");
+        let did = key.get_did_pkh("mys", key.hrp()).expect("cannot get did");
 
         assert_eq!(&did.0[0..2], super::DID_IPLD_PREFIX);
         assert_eq!(did.to_string(), DID_PKH_MULTIKEY_STR);
@@ -1099,16 +1127,30 @@ mod tests {
         let did = Did::from_identity(&id, "mys").expect("cannot get did");
         assert_eq!(&did.0[0..2], super::DID_IPLD_PREFIX);
         assert_eq!(did.to_string(), DID_PKH_STR);
+        assert_eq!(did.get_identity().unwrap(), id);
+
+        assert_eq!(
+            Did::from_str(DID_PKH_STR).unwrap().get_identity().unwrap(),
+            id
+        );
     }
 
     #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
     #[test]
     fn can_create_from_hrp_identity() {
         let key = Ed25519PublicKey::from_str(PUBLIC).expect("cannot decode key string");
-        let id = Identity::from_public_key(&key, "id");
+        let id = Identity::from_public_key(&key, "mys");
         let did = Did::from_identity(&id, "mys").expect("cannot get did");
         assert_eq!(&did.0[0..2], super::DID_IPLD_PREFIX);
         assert_eq!(did.to_string(), DID_PKH_HRP_STR);
+
+        assert_eq!(
+            Did::from_str(DID_PKH_HRP_STR)
+                .unwrap()
+                .get_identity()
+                .unwrap(),
+            id
+        );
     }
 
     #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
@@ -1135,7 +1177,7 @@ mod tests {
     #[test]
     fn can_create_did_pkh_document_from_multikey() {
         let key = PublicKey::from_str(MULTIKEY_PUBLIC).expect("cannot decode key string");
-        let id = Identity::from_public_key(&key, "id");
+        let id = Identity::from_public_key(&key, "mys");
         let did = Did::from_identity(&id, "mys").unwrap();
         println!("Did: {did}");
         let doc = did.get_document(Some(key.to_string()), None).unwrap();

@@ -2,10 +2,6 @@
 //#![no_std]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![doc = include_str!("../README.md")]
-//#![doc(
-//    html_logo_url = "https://raw.githubusercontent.com/RustCrypto/meta/master/logo.svg",
-//    html_favicon_url = "https://raw.githubusercontent.com/RustCrypto/meta/master/logo.svg"
-//)]
 #![warn(clippy::pedantic)] // Be pedantic by default
 #![warn(clippy::integer_division_remainder_used)]
 // Be judicious about using `/` and `%`
@@ -24,7 +20,7 @@ pub mod prelude;
 
 pub use hash::*;
 pub use mysteryn_core::{
-    RawSignature, attributes, base32precheck, key_traits, multibase, multicodec, result, varint,
+    RawSignature, attributes, base32pc, key_traits, multibase, multicodec, result, varint,
 };
 
 #[cfg(target_arch = "wasm32")]

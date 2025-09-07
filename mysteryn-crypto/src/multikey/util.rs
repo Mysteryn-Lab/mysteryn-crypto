@@ -180,3 +180,57 @@ pub(crate) fn signature_to_debug_string(signature: &[u8], algorithm: &str) -> Re
     }
     Ok(s)
 }
+#[cfg(test)]
+mod tests {
+    use crate::{
+        key_traits::*,
+        multikey::util::{key_to_debug_string, signature_to_debug_string},
+        multikey::{MultikeyPublicKey, MultikeySecretKey, Multisig},
+        result::Result,
+    };
+    use mysteryn_keys::DefaultKeyFactory;
+    use std::str::FromStr;
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    type PublicKey = MultikeyPublicKey<DefaultKeyFactory>;
+    type SecretKey = MultikeySecretKey<DefaultKeyFactory>;
+
+    const SECRET1: &str = "secret_xahgjgqfsxwdjkxun9wspqzgy85w6a709xu0qk3hl0unyc7ytc8dmgca22w4ejswdjkgdde6d4r58qxur4v2xmyflkjl4eg";
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_key_to_debug_string() -> Result<()> {
+        let secret_key = SecretKey::from_str(SECRET1)?;
+        let public_key = PublicKey::try_from(secret_key.public_key())?;
+
+        let secret_key_debug =
+            key_to_debug_string(&secret_key.to_bytes(), secret_key.algorithm_name())?;
+        let public_key_debug =
+            key_to_debug_string(&public_key.to_bytes(), public_key.algorithm_name())?;
+
+        assert!(secret_key_debug.contains("algorithm_name: EdDSA"));
+        //assert!(secret_key_debug.contains("key_type: secret"));
+        assert!(public_key_debug.contains("algorithm_name: EdDSA"));
+        //assert!(public_key_debug.contains("key_type: public"));
+
+        Ok(())
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_signature_to_debug_string() -> Result<()> {
+        let secret_key = SecretKey::from_str(SECRET1)?;
+        let data = b"test data";
+        let signature = secret_key.sign(data, None)?;
+        let multisig = Multisig::<DefaultKeyFactory>::try_from(&signature)?;
+
+        let signature_debug =
+            signature_to_debug_string(multisig.as_bytes(), multisig.algorithm_name())?;
+
+        assert!(signature_debug.contains("algorithm_name: EdDSA"));
+        assert!(signature_debug.contains("signature_size: 64"));
+
+        Ok(())
+    }
+}

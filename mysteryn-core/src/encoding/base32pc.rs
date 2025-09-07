@@ -5,7 +5,7 @@ use crate::{
 use data_encoding::Encoding;
 use data_encoding_macro::new_encoding;
 
-const BASE32PRECHECK: Encoding = new_encoding! {
+const BASE32PC: Encoding = new_encoding! {
     symbols: "qpzry9x8gf2tvdw0s3jn54khce6mua7l",
 };
 pub const DELIMITER: &str = "_";
@@ -20,7 +20,7 @@ pub fn encode(hrp: &str, data: &[u8]) -> String {
         combined.extend_from_slice(MULTIBASE_PREFIX_BYTES);
         combined.extend_from_slice(data);
 
-        let encoded_data = BASE32PRECHECK.encode(&checksum::append(&combined));
+        let encoded_data = BASE32PC.encode(&checksum::append(&combined));
         concat_string!(MULTIBASE_PREFIX, encoded_data)
     } else {
         // HRP present - build the full string with delimiter and checksum.
@@ -32,12 +32,11 @@ pub fn encode(hrp: &str, data: &[u8]) -> String {
         combined.extend_from_slice(MULTIBASE_PREFIX_BYTES);
         combined.extend_from_slice(data);
 
-        let checksum = checksum::get_checksum(&combined);
-        let mut data_with_checksum = Vec::with_capacity(data.len() + checksum.len());
-        data_with_checksum.extend_from_slice(data);
-        data_with_checksum.extend_from_slice(&checksum);
+        let data_with_checksum = checksum::append(&combined);
 
-        let encoded_data = BASE32PRECHECK.encode(&data_with_checksum);
+        let encoded_data = BASE32PC.encode(
+            &data_with_checksum[hrp.len() + DELIMITER.len() + MULTIBASE_PREFIX_BYTES.len()..],
+        );
         concat_string!(hrp, DELIMITER, MULTIBASE_PREFIX, encoded_data)
     }
 }
@@ -50,7 +49,7 @@ pub fn decode(text: &str) -> Result<(&str, Vec<u8>)> {
         .strip_prefix(MULTIBASE_PREFIX)
         .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
 
-    let decoded_bytes = BASE32PRECHECK
+    let decoded_bytes = BASE32PC
         .decode(data_part.as_bytes())
         .map_err(|e| Error::EncodingError(e.to_string()))?;
 
@@ -80,18 +79,15 @@ pub fn decode(text: &str) -> Result<(&str, Vec<u8>)> {
 /// Encode data to the Base32pc with a constant prefix.
 pub fn encode_constant(prefix: &str, data: &[u8]) -> String {
     if prefix.is_empty() {
-        BASE32PRECHECK.encode(&checksum::append(data))
+        BASE32PC.encode(&checksum::append(data))
     } else {
         let mut combined = Vec::with_capacity(prefix.len() + data.len());
         combined.extend_from_slice(prefix.as_bytes());
         combined.extend_from_slice(data);
 
-        let checksum = checksum::get_checksum(&combined);
-        let mut data_with_checksum = Vec::with_capacity(data.len() + checksum.len());
-        data_with_checksum.extend_from_slice(data);
-        data_with_checksum.extend_from_slice(&checksum);
+        let data_with_checksum = checksum::append(&combined);
 
-        let encoded_data = BASE32PRECHECK.encode(&data_with_checksum);
+        let encoded_data = BASE32PC.encode(&data_with_checksum[prefix.len()..]);
         concat_string!(prefix, encoded_data)
     }
 }
@@ -102,7 +98,7 @@ pub fn decode_constant(prefix: &str, text: &str) -> Result<Vec<u8>> {
         .strip_prefix(prefix)
         .ok_or_else(|| Error::EncodingError("invalid prefix".to_string()))?;
 
-    let decoded_bytes = BASE32PRECHECK
+    let decoded_bytes = BASE32PC
         .decode(data_part.as_bytes())
         .map_err(|e| Error::EncodingError(e.to_string()))?;
 
@@ -162,7 +158,7 @@ mod tests {
     #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
     #[test]
     fn test_encode_decode_hrp_big() {
-        let mut orig = [0u8; 1000];
+        let mut orig = [0u8; 10000];
         rng().fill_bytes(&mut orig);
 
         let encoded = encode("test", &orig);

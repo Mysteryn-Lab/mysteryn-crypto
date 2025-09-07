@@ -11,25 +11,24 @@ pub fn append(data: &[u8]) -> Vec<u8> {
     let chunks = data.chunks(DATA_CHUNK_LEN);
     let num_chunks = chunks.len();
 
-    let mut out = Vec::with_capacity(data.len() + num_chunks * ECC_LEN);
-    let mut ecc_buffer = Vec::with_capacity(num_chunks * ECC_LEN);
+    let mut out = vec![0u8; data.len() + num_chunks * ECC_LEN];
+    let mut out_data_pos = 0;
+    let mut out_ecc_pos = data.len();
 
     for chunk in chunks {
         let block = encoder.encode(chunk);
-        out.extend_from_slice(block.data());
+        out[out_data_pos..out_data_pos + chunk.len()].copy_from_slice(block.data());
+        out_data_pos += block.data().len();
 
-        let mut tmp_ecc = block.ecc().to_vec();
-        if let Some(last_byte) = tmp_ecc.last_mut() {
-            // XOR the chunk length with the last byte of ECC, as an additional check
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                *last_byte ^= chunk.len() as u8;
-            }
+        out[out_ecc_pos..out_ecc_pos + ECC_LEN].copy_from_slice(block.ecc());
+        out_ecc_pos += ECC_LEN;
+        // XOR the chunk length with the last byte of ECC, as an additional check
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            out[out_ecc_pos - 1] ^= chunk.len() as u8;
         }
-        ecc_buffer.extend_from_slice(&tmp_ecc);
     }
 
-    out.extend_from_slice(&ecc_buffer);
     out
 }
 
@@ -42,14 +41,15 @@ pub fn get_checksum(data: &[u8]) -> Vec<u8> {
 
     for chunk in chunks {
         let block = encoder.encode(chunk);
-        let mut tmp_ecc = block.ecc().to_vec();
+        let mut tmp_ecc = [0u8; ECC_LEN];
+        tmp_ecc.copy_from_slice(block.ecc());
         if let Some(last_byte) = tmp_ecc.last_mut() {
             #[allow(clippy::cast_possible_truncation)]
             {
                 *last_byte ^= chunk.len() as u8;
             }
         }
-        ecc_buffer.extend_from_slice(&tmp_ecc);
+        ecc_buffer.extend(&tmp_ecc);
     }
     ecc_buffer
 }
@@ -70,19 +70,15 @@ pub fn decode(data: &[u8]) -> Result<&[u8]> {
     let mut block_buffer = [0u8; CHUNK_LEN];
 
     for (chunk, ecc) in chunks.zip(eccs) {
-        let mut tmp_ecc = [0u8; ECC_LEN];
-        tmp_ecc.copy_from_slice(ecc);
-
-        if let Some(last_byte) = tmp_ecc.last_mut() {
+        let block = &mut block_buffer[..chunk.len() + ECC_LEN];
+        block[..chunk.len()].copy_from_slice(chunk);
+        block[chunk.len()..].copy_from_slice(ecc);
+        if let Some(last_byte) = block.last_mut() {
             #[allow(clippy::cast_possible_truncation)]
             {
                 *last_byte ^= chunk.len() as u8;
             }
         }
-
-        let block = &mut block_buffer[..chunk.len() + ECC_LEN];
-        block[..chunk.len()].copy_from_slice(chunk);
-        block[chunk.len()..].copy_from_slice(&tmp_ecc);
 
         if block.len() < ECC_LEN || decoder.is_corrupted(block) {
             return Err(Error::EncodingError("byte loss".to_owned()));

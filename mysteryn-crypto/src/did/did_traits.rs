@@ -4,6 +4,7 @@ use crate::{
     key_traits::{PublicKeyTrait, SecretKeyTrait},
     result::Result,
 };
+use mysteryn_core::multicodec::multicodec_prefix;
 
 pub trait SecretDidTrait: SecretKeyTrait {
     /// Provides a DID that can be used to solve the public key
@@ -15,6 +16,11 @@ pub trait SecretDidTrait: SecretKeyTrait {
     /// Provides a "did:pkh" DID
     fn get_did_pkh(&self, method_name: &str, hrp: &str) -> Result<Did> {
         let pk = self.public_key();
+        let hrp = if pk.codec() == multicodec_prefix::MULTIKEY && hrp.is_empty() {
+            method_name
+        } else {
+            hrp
+        };
         let id = Identity::new(hrp, Hash::hash_bytes(&pk.to_bytes()));
         Did::from_identity(&id, method_name)
     }

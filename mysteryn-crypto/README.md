@@ -43,9 +43,9 @@ The following **Post-quantum digital signature** algorithms are included:
 
 **Note:**
 
--   Algorithms in **bold** are recommended for their high security and performance.
--   Algorithms with a ~~strikethrough~~ are not yet implemented.
--   \* The signature size is not fixed.
+- Algorithms in **bold** are recommended for their high security and performance.
+- Algorithms with a ~~strikethrough~~ are not yet implemented.
+- \* The signature size is not fixed.
 
 **Custom digital signature** algorithms can be added by implementing `SecretKeyTrait`, `PublicKeyTrait` and `SignatureTrait`, and including them as a custom key variant. See [`./examples/custom-keys.rs`](./examples/custom-keys.rs) for a demo.
 
@@ -72,10 +72,26 @@ pub type Signature = Multisig<DefaultKeyFactory>;
 
 And use keys (`quick-start.rs`).
 
-```rust,ignore
-mod keys;
+```rust
+/// Default implementation of key and signature types.
+use mysteryn_crypto::multikey::*;
+use mysteryn_keys::DefaultKeyFactory;
 
-use keys::*;
+// keys.rs
+////////////////////////////////////////////////////////////////////////////////
+/// Multikey secret key.
+pub type SecretKey = MultikeySecretKey<DefaultKeyFactory>;
+/// Multikey public key.
+#[allow(dead_code)]
+pub type PublicKey = MultikeyPublicKey<DefaultKeyFactory>;
+/// Multisig signature.
+#[allow(dead_code)]
+pub type Signature = Multisig<DefaultKeyFactory>;
+////////////////////////////////////////////////////////////////////////////////
+// Use this instead.
+// mod keys;
+// use keys::*;
+
 use mysteryn_crypto::prelude::*;
 use mysteryn_crypto::{multicodec::multicodec_prefix, result::Result};
 
@@ -92,7 +108,7 @@ fn main() -> Result<()> {
         Some("pub"),
     )?;
     let public_key = PublicKey::try_from(secret_key.public_key())?;
-    let did = public_key.get_did_pkh("mys", None)?;
+    let did = public_key.get_did_pkh("mys", "")?;
     println!("secret {secret_key}\npublic {public_key}\nDID {did}");
 
     // can sign
@@ -393,10 +409,10 @@ where
 
 - `method-specific-id-varbytes` - varbytes, a unique method-specific ID, which may include colons (`:`):
   
-   - "did:key": public key bytes.
-   - "did:pkh" with the Identity (0x00) codec: identity bytes.
-   - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`.
-   - "did:*" with the Raw (0x55) codec: a string of the method-specific ID for general DIDs.
+  - "did:key": public key bytes.
+  - "did:pkh" with the Identity (0x00) codec: identity bytes.
+  - "did:pkh" with the Raw (0x55) codec: a string representing `[<network-id>:][<chain-id>:]<account-id>`.
+  - "did:*" with the Raw (0x55) codec: a string of the method-specific ID for general DIDs.
 
 - `url-varbytes` - varbytes, an *UTF-8* encoded string representing the [DID URL parameters](https://www.w3.org/TR/did-core/#did-url-syntax).
 
@@ -418,6 +434,14 @@ The DID string format for the `did:pkh`:
 did:pkh:[<network-id>:][<chain-id>:]<account-id>[<url>]
 ```
 
+When a HRP is used, the part after "did:pkh:" is an address with "_" replaced by ":".
+For example, the address and its DID:
+
+```txt
+        mys_xarcs8r9x45wzu9kddgphmkextlkuerv8sdvh64vu380gprhkuhsz9awzs255cgunklu
+did:pkh:mys:xarcs8r9x45wzu9kddgphmkextlkuerv8sdvh64vu380gprhkuhsz9awzs255cgunklu
+```
+
 See [Decentralized Identifiers (DIDs) v1.0](https://www.w3.org/TR/did-core/) for a detailed description.
 
 Examples:
@@ -425,7 +449,7 @@ Examples:
 ```text
 did:example:123456789abcdefghi
 did:key:pub_xa8tkszqmsw43qzqfqsksq2rvlvq8626wvjrcelyjsrd85xlxqzngap0h0jhrfajvgcmwryvztundgd9zw
-did:pkh:mys:mys_xarcs00f95fymgxx90fd9fkttm7zmj3zjrmr4expfrcp0f8ay6338ncmmzp7fy0rljzdaq
+did:pkh:mys:xarcs8r9x45wzu9kddgphmkextlkuerv8sdvh64vu380gprhkuhsz9awzs255cgunklu
 ```
 
 ### Multihash
@@ -470,7 +494,7 @@ String format:
 <hrp>_<Multibase(<codec-code><hash-data-varbytes>)>
 ```
 
-### Base32precheck
+### Base32pc
 
 This is a variant of Base32 encoding with the human-readable prefix (`HRP`) and the checksum.
 
@@ -521,21 +545,21 @@ pubtest_xa8tkszqqpqysrhqvweac9lzyhw6ceum9pk2lxaujpv6gqp50uww65ykrqhp83j22gpe8wzx
 To build this library to the WebAssembly:
 
 1. Install`wasm-pack`:
-   
+
    This version does not require your "Cargo.toml" to have `crate-type = ["cdylib", "rlib"]`.
-   
+
    ```bash
    cargo install --git https://github.com/druide/wasm-pack.git
    ```
 
 2. Build a web package:
-   
+
    ```bash
    wasm-pack build --target web
    ```
 
 3. Build a npm module:
-   
+
    ```bash
    wasm-pack build --target nodejs
    ```
@@ -548,7 +572,7 @@ npm run reinstall
 npm start
 ```
 
-### Tests
+### Tests and benches
 
 Run tests:
 
@@ -577,6 +601,31 @@ NO_HEADLESS=1 cargo test --target wasm32-unknown-unknown -- --nocapture
 set NO_HEADLESS=1 && cargo test --target wasm32-unknown-unknown -- --nocapture
 ```
 
+Coverage.
+
+```bash
+RUSTFLAGS="-C instrument-coverage" cargo test --tests
+grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o target/coverage/html
+grcov . -s . --binary-path ./target/debug/ -t lcov --branch --ignore-not-existing -o ./target/debug/
+rm -f *.profraw
+```
+
+Benchmarks.
+
+Cargo stands benches as tests, so need `--test`. As the memory allocator is
+global, need to run in one thread. To distinquish benches, their names start
+with "bench":
+
+```bash
+cargo bench -- --test --test-threads=1 -q bench
+```
+
+or
+
+```bash
+cargo b
+```
+
 ### Run examples
 
 ```bash
@@ -603,4 +652,4 @@ cargo run --example custom-keys
 
 ## License
 
-This software is licensed under the [MIT license](./LICENSE).
+Licensed under the [Ethical Use License v1.0](./LICENSE.md).

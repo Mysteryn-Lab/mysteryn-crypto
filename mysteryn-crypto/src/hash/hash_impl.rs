@@ -33,7 +33,7 @@ fn unsupported_error(code: Code) -> Error {
 }
 
 /// The hash in multihash format.
-/// See https://github.com/multiformats/multihash.
+/// See <https://github.com/multiformats/multihash>.
 #[derive(PartialEq, Clone, Eq, Hash, PartialOrd, Ord)]
 pub struct Hash(Vec<u8>);
 

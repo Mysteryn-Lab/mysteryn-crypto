@@ -1,7 +1,10 @@
 use crate::{
     attributes::{KeyAttributes, SignatureAttributes},
+    concat_vec,
+    multicodec::multicodec_prefix::MULTIKEY,
     result::Result,
     signature::RawSignature,
+    varint::encode_varint_u64,
 };
 use ambassador::delegatable_trait;
 use dyn_clone::{DynClone, clone_trait_object};
@@ -85,6 +88,22 @@ pub trait SecretKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
 
     /// Convert to Any
     fn as_any(&self) -> &dyn Any;
+
+    /// Export a key to the ssh format.
+    fn to_ssh_key(&self) -> Result<String>;
+
+    /// Get multiformat prefixed bytes of the key.
+    fn to_prefixed(&self) -> Cow<'_, [u8]> {
+        if self.codec() == MULTIKEY {
+            // Multikey bytes are already prefixed.
+            self.to_bytes()
+        } else {
+            Cow::Owned(concat_vec!(
+                encode_varint_u64(self.codec()),
+                self.to_bytes()
+            ))
+        }
+    }
 }
 
 clone_trait_object!(SecretKeyTrait);
@@ -158,6 +177,14 @@ impl SecretKeyTrait for Box<dyn SecretKeyTrait> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
     }
+
+    fn to_ssh_key(&self) -> Result<String> {
+        self.as_ref().to_ssh_key()
+    }
+
+    fn to_prefixed(&self) -> Cow<'_, [u8]> {
+        self.as_ref().to_prefixed()
+    }
 }
 
 /// This trait must be implemented by a struct that encapsulates cryptographic
@@ -195,6 +222,22 @@ pub trait PublicKeyTrait: KeyMaterialConditionalSendSync + Debug + Display + Dyn
 
     /// Convert to Any
     fn as_any(&self) -> &dyn Any;
+
+    /// Export a key to the ssh format.
+    fn to_ssh_key(&self) -> Result<String>;
+
+    /// Get multiformat prefixed bytes of the key.
+    fn to_prefixed(&self) -> Cow<'_, [u8]> {
+        if self.codec() == MULTIKEY {
+            // Multikey bytes are already prefixed.
+            self.to_bytes()
+        } else {
+            Cow::Owned(concat_vec!(
+                encode_varint_u64(self.codec()),
+                self.to_bytes()
+            ))
+        }
+    }
 }
 
 clone_trait_object!(PublicKeyTrait);
@@ -237,6 +280,14 @@ impl PublicKeyTrait for Box<dyn PublicKeyTrait> {
 
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
+    }
+
+    fn to_ssh_key(&self) -> Result<String> {
+        self.as_ref().to_ssh_key()
+    }
+
+    fn to_prefixed(&self) -> Cow<'_, [u8]> {
+        self.as_ref().to_prefixed()
     }
 }
 
@@ -408,6 +459,9 @@ mod tests {
         fn as_any(&self) -> &dyn Any {
             self
         }
+        fn to_ssh_key(&self) -> Result<String> {
+            Ok("ssh_key_mock".to_string())
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -449,6 +503,9 @@ mod tests {
         }
         fn as_any(&self) -> &dyn Any {
             self
+        }
+        fn to_ssh_key(&self) -> Result<String> {
+            Ok("ssh_key_mock".to_string())
         }
     }
 

@@ -20,6 +20,8 @@ pub enum Error {
     IOError(String),
     #[error("Invalid input length")]
     InvalidInputLength,
+    #[error("Not implemented")]
+    NotImplemented,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -2,7 +2,7 @@ use super::{Multisig, util::key_to_debug_string};
 use crate::{
     RawSignature,
     attributes::{KeyAttributes, SignatureAttributes},
-    base32precheck,
+    base32pc,
     did::Did,
     key_traits::{KeyFactory, PublicKeyTrait, SignatureTrait},
     multicodec::multicodec_prefix,
@@ -55,6 +55,9 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
     ) -> Self {
         // Remove key data, as we have the key instance.
         attributes.set_key_data(None);
+        if key.codec() != multicodec_prefix::CUSTOM {
+            attributes.set_algorithm_name(None);
+        }
         let mut k = Self(key, attributes, hrp, vec![], PhantomData::<KF>);
         let h = Code::Blake3_256.digest(&k.to_bytes());
         k.3 = h.digest().to_vec();
@@ -99,9 +102,13 @@ impl<KF: KeyFactory> MultikeyPublicKey<KF> {
             )
         };
         // Key attributes
-        let attributes = KeyAttributes::from_reader(&mut data)?;
-        if key_codec == multicodec_prefix::CUSTOM && attributes.get_algorithm_name()?.is_none() {
-            return Err(Error::InvalidKey("no algorithm name".to_string()));
+        let mut attributes = KeyAttributes::from_reader(&mut data)?;
+        if key_codec == multicodec_prefix::CUSTOM {
+            if attributes.get_algorithm_name()?.is_none() {
+                return Err(Error::InvalidKey("no algorithm name".to_string()));
+            }
+        } else {
+            attributes.set_algorithm_name(None);
         }
         let Some(key_data) = attributes.get_key_data() else {
             return Err(Error::InvalidKey("no key data".to_owned()));
@@ -240,11 +247,15 @@ impl<KF: KeyFactory + Clone> PublicKeyTrait for MultikeyPublicKey<KF> {
     fn as_any(&self) -> &dyn Any {
         self
     }
+
+    fn to_ssh_key(&self) -> Result<String> {
+        self.0.to_ssh_key()
+    }
 }
 
 impl<KF: KeyFactory> Display for MultikeyPublicKey<KF> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = base32precheck::encode(self.hrp(), &self.to_bytes());
+        let s = base32pc::encode(self.hrp(), &self.to_bytes());
         write!(f, "{s}")
     }
 }
@@ -287,8 +298,7 @@ impl<KF: KeyFactory> FromStr for MultikeyPublicKey<KF> {
     type Err = Error;
 
     fn from_str(key: &str) -> Result<Self> {
-        let (hrp, data) =
-            base32precheck::decode(key).map_err(|e| Error::InvalidKey(e.to_string()))?;
+        let (hrp, data) = base32pc::decode(key).map_err(|e| Error::InvalidKey(e.to_string()))?;
         let s = Self::from_bytes(&data)?;
         if hrp != s.hrp() {
             return Err(Error::InvalidKey("invalid prefix".to_string()));
@@ -371,5 +381,81 @@ impl<KF: KeyFactory> serde::de::Visitor<'_> for MultikeyPublicKeyVisitor<KF> {
         E: serde::de::Error,
     {
         Self::Value::from_str(v).map_err(|e| E::custom(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::key_traits::SecretKeyTrait;
+    use crate::multikey::MultikeySecretKey;
+    use mysteryn_keys::DefaultKeyFactory;
+
+    #[test]
+    fn test_from_to_bytes() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let public_key = MultikeyPublicKey::try_from(secret_key.public_key()).unwrap();
+        let bytes = public_key.to_bytes();
+        let restored_public_key =
+            MultikeyPublicKey::<DefaultKeyFactory>::from_bytes(&bytes).unwrap();
+        assert_eq!(public_key, restored_public_key);
+    }
+
+    #[test]
+    fn test_from_to_str() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let public_key = MultikeyPublicKey::try_from(secret_key.public_key()).unwrap();
+        let s = public_key.to_string();
+        let restored_public_key = MultikeyPublicKey::<DefaultKeyFactory>::from_str(&s).unwrap();
+        assert_eq!(public_key, restored_public_key);
+    }
+
+    #[test]
+    fn test_verify_signature() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let public_key =
+            MultikeyPublicKey::<DefaultKeyFactory>::try_from(secret_key.public_key()).unwrap();
+        let data = b"test data";
+        let signature = secret_key.sign(data, None).unwrap();
+        assert!(public_key.verify(data, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_verify_invalid_signature() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            Some("secret"),
+            Some("pub"),
+        )
+        .unwrap();
+        let public_key =
+            MultikeyPublicKey::<DefaultKeyFactory>::try_from(secret_key.public_key()).unwrap();
+        let data = b"test data";
+        let wrong_data = b"wrong data";
+        let signature = secret_key.sign(data, None).unwrap();
+        assert!(public_key.verify(wrong_data, &signature).is_err());
     }
 }

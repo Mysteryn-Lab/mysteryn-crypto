@@ -77,8 +77,7 @@ impl<KF: KeyFactory> SignatureTrait for Multisig<KF> {
 impl<KF: KeyFactory> TryFrom<&[u8]> for Multisig<KF> {
     type Error = Error;
     fn try_from(bytes: &[u8]) -> Result<Self> {
-        let buf = bytes.to_vec();
-        let mut buf: &[u8] = &buf;
+        let mut buf: &[u8] = bytes;
         // Multisig prefix
         let prefix = read_varint_u64(&mut buf)
             .map_err(|e| Error::IOError(e.to_string()))?
@@ -230,5 +229,120 @@ impl<KF: KeyFactory> Ord for Multisig<KF> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Compare by raw signatures.
         self.0.raw().as_slice().cmp(other.0.raw().as_slice())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Multisig;
+    use crate::{
+        attributes::SignatureAttributes, key_traits::*, multicodec::multicodec_prefix,
+        multikey::MultikeySecretKey, varint,
+    };
+    use mysteryn_keys::DefaultKeyFactory;
+    #[cfg(all(target_family = "wasm", target_os = "unknown"))]
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    // This helper is for creating intentionally invalid Multisig byte streams for testing error conditions.
+    fn create_invalid_multisig_bytes(
+        prefix: u64,
+        codec: u64,
+        msg: &[u8],
+        attrs: &SignatureAttributes,
+        signature: &[u8],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        varint::write_varint_u64(prefix, &mut bytes).unwrap();
+        varint::write_varint_u64(codec, &mut bytes).unwrap();
+        varint::write_varbytes(msg, &mut bytes).unwrap();
+        attrs.to_writer(&mut bytes).unwrap();
+        bytes.extend_from_slice(signature);
+        bytes
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_multisig_try_from_valid() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let signature = secret_key.sign(&[], None).unwrap();
+        let multisig = Multisig::<DefaultKeyFactory>::try_from(signature.as_slice());
+        assert!(multisig.is_ok());
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_multisig_try_from_invalid_prefix() {
+        let attrs = SignatureAttributes::default();
+        let bytes = create_invalid_multisig_bytes(
+            0x00,                       // Invalid prefix
+            multicodec_prefix::ED25519, // Correct inner codec
+            &[],
+            &attrs,
+            &[],
+        );
+        let multisig = Multisig::<DefaultKeyFactory>::try_from(bytes.as_slice());
+        assert!(multisig.is_err());
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_multisig_try_from_unsupported_message() {
+        let attrs = SignatureAttributes::default();
+        let bytes = create_invalid_multisig_bytes(
+            multicodec_prefix::MULTISIG,
+            multicodec_prefix::ED25519,
+            b"unsupported", // Non-empty message
+            &attrs,
+            &[],
+        );
+        let multisig = Multisig::<DefaultKeyFactory>::try_from(bytes.as_slice());
+        assert!(multisig.is_err());
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_multisig_attributes() {
+        let mut attrs = SignatureAttributes::default();
+        attrs.set_nonce(Some(b"12345678"));
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let signature = secret_key.sign(&[], Some(&mut attrs)).unwrap();
+        let multisig = Multisig::<DefaultKeyFactory>::try_from(signature.as_slice()).unwrap();
+        let restored_attrs = multisig.attributes();
+        assert_eq!(restored_attrs.get_nonce(), attrs.get_nonce());
+    }
+
+    #[cfg_attr(all(target_family = "wasm", target_os = "unknown"), wasm_bindgen_test)]
+    #[test]
+    fn test_multisig_try_from_truncated_bytes() {
+        let secret_key = MultikeySecretKey::<DefaultKeyFactory>::new(
+            multicodec_prefix::ED25519_SECRET,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let signature = secret_key.sign(&[], None).unwrap();
+        let bytes = signature.as_slice();
+
+        for i in 0..bytes.len() {
+            let truncated = &bytes[0..i];
+            let result = Multisig::<DefaultKeyFactory>::try_from(truncated);
+            assert!(result.is_err(), "Should fail for length {}", i);
+        }
     }
 }

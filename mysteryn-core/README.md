@@ -4,6 +4,26 @@ This crate provides the core traits and functions used by the `mysteryn-crypto` 
 
 See the [`mysteryn-crypto` README](../mysteryn-crypto/README.md) for a full description of the project.
 
+## Tests and benches
+
+```bash
+cargo test
+```
+
+Cargo stands benches as tests, so need `--test`. As the memory allocator is
+global, need to run in one thread. To distinquish benches, their names start
+with "bench":
+
+```bash
+cargo bench -- --test --test-threads=1 -q bench
+```
+
+or
+
+```bash
+cargo b
+```
+
 ## License
 
-This software is licensed under the [MIT license](./LICENSE).
+Licensed under the [Ethical Use License v1.0](./LICENSE.md).
